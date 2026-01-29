@@ -1,0 +1,5 @@
+{
+  "name": "HolidayMaximizer",
+  "description": "Smart vacation planner that optimizes public holidays and tracks commute time.",
+  "requestFramePermissions": []
+}
