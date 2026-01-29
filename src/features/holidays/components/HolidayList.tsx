@@ -22,7 +22,12 @@ export const HolidayList = ({ holidays, year, onSelect }: HolidayListProps) => {
           onClick={() => onSelect(holiday)}
           className="w-full rounded-2xl border border-transparent bg-white/70 px-3 py-2 text-left transition hover:border-brand-200"
         >
-          <p className="text-sm font-semibold text-slate-900">{holiday.name}</p>
+          <p className="text-sm font-semibold text-slate-900 flex items-center justify-between gap-2">
+            <span>{holiday.name}</span>
+            <span className={`text-[0.6rem] uppercase tracking-widest ${holiday.scope === 'regional' ? 'text-emerald-600' : 'text-rose-500'}`}>
+              {holiday.scope === 'regional' ? 'City' : 'National'}
+            </span>
+          </p>
           <p className="text-xs text-slate-500 flex items-center gap-2">
             <CalendarFold size={12} />
             {holiday.date}

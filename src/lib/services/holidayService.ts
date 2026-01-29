@@ -16,9 +16,9 @@ export const getPublicHolidays = async (year: number, countryCode: string, regio
   }
   const data: any[] = await response.json();
   const filtered = data.filter((holiday) => {
-    if (!holiday.counties) return true;
-    if (regionCode && holiday.counties.includes(regionCode)) return true;
-    return false;
+    if (!holiday.counties || holiday.counties.length === 0) return true;
+    if (!regionCode) return false;
+    return holiday.counties.includes(regionCode);
   });
   const normalized: Holiday[] = filtered.map((holiday) => ({
     date: holiday.date,
@@ -26,6 +26,7 @@ export const getPublicHolidays = async (year: number, countryCode: string, regio
     localName: holiday.localName,
     countryCode: holiday.countryCode,
     counties: holiday.counties,
+    scope: holiday.counties && holiday.counties.length > 0 ? 'regional' : 'national',
   }));
   cache.set(key, normalized);
   return normalized;

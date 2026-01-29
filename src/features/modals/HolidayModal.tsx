@@ -11,7 +11,10 @@ export const HolidayModal = ({ holiday, year, onClose }: HolidayModalProps) => (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
     <div className="glass-panel relative w-full max-w-sm overflow-hidden">
       <div className="bg-gradient-to-br from-brand-500 to-indigo-500 p-6 text-white">
-        <p className="text-xs uppercase tracking-widest text-white/70">Holiday {year}</p>
+        <div className="flex items-center justify-between">
+          <p className="text-xs uppercase tracking-widest text-white/70">Holiday {year}</p>
+          {holiday.scope === 'regional' && <span className="text-[0.65rem] uppercase tracking-widest text-emerald-200">City</span>}
+        </div>
         <h2 className="text-3xl font-semibold mt-2">{holiday.date}</h2>
         <button className="absolute top-4 right-4 text-white/70 hover:text-white" onClick={onClose} aria-label="Close">
           <X size={20} />

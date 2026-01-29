@@ -7,6 +7,7 @@ export interface Holiday {
   countryCode?: string;
   counties?: string[] | null;
   description?: string;
+  scope?: 'national' | 'regional';
 }
 
 export interface OptimizationSuggestion {

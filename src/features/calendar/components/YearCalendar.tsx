@@ -59,7 +59,9 @@ export const YearCalendar = ({
       const dateStr = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       const dateObj = new Date(year, monthIndex, day);
       const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
-      const isHoliday = activeProfile?.holidays.some((holiday) => holiday.date === dateStr);
+      const holidayMeta = activeProfile?.holidays.find((holiday) => holiday.date === dateStr);
+      const isHoliday = Boolean(holidayMeta);
+      const isRegionalHoliday = holidayMeta?.scope === 'regional';
       const activeVacation = activeProfile?.vacations.some((vacation) => dateStr >= vacation.startDate && dateStr <= vacation.endDate);
 
       const overlayVacations = profiles
@@ -102,9 +104,15 @@ export const YearCalendar = ({
         borderClass = 'border-amber-100';
         textClass = 'text-amber-700';
       } else if (isHoliday) {
-        backgroundClass = 'bg-rose-50';
-        borderClass = 'border-rose-200';
-        textClass = 'text-rose-600 font-semibold';
+        if (isRegionalHoliday) {
+          backgroundClass = 'bg-emerald-50';
+          borderClass = 'border-emerald-200';
+          textClass = 'text-emerald-700 font-semibold';
+        } else {
+          backgroundClass = 'bg-rose-50';
+          borderClass = 'border-rose-200';
+          textClass = 'text-rose-600 font-semibold';
+        }
       } else if (isWeekend) {
         backgroundClass = 'bg-slate-50';
         textClass = 'text-slate-400';
@@ -153,7 +161,7 @@ export const YearCalendar = ({
   };
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+    <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
       {MONTHS.map((_, monthIndex) => renderMonth(monthIndex))}
     </div>
   );

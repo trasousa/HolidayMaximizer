@@ -3,12 +3,18 @@ export interface Country {
   value: string;
 }
 
+export interface CountryRegion {
+  key: string;
+  value: string;
+}
+
 interface NagerCountry {
   countryCode: string;
   name: string;
 }
 
 let countryCache: Country[] | null = null;
+const regionCache = new Map<string, CountryRegion[]>();
 
 export const fetchSupportedCountries = async (): Promise<Country[]> => {
   if (countryCache) return countryCache;
@@ -34,4 +40,26 @@ export const normalizeCountry = async (input: string): Promise<string> => {
 
 export const clearCountryCache = () => {
   countryCache = null;
+};
+
+export const fetchCountryRegions = async (countryCode: string): Promise<CountryRegion[]> => {
+  if (regionCache.has(countryCode)) {
+    return regionCache.get(countryCode)!;
+  }
+  const response = await fetch(`https://date.nager.at/api/v3/CountryInfo/${countryCode}`);
+  if (!response.ok) {
+    regionCache.set(countryCode, []);
+    return [];
+  }
+  const data = await response.json();
+  const regions: CountryRegion[] = (data.counties ?? []).map((county: { code: string; name: string }) => ({
+    key: county.code,
+    value: county.name,
+  }));
+  regionCache.set(countryCode, regions);
+  return regions;
+};
+
+export const clearRegionCache = () => {
+  regionCache.clear();
 };

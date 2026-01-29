@@ -1,4 +1,4 @@
-import { addDays, format, isWeekend } from 'date-fns';
+import { addDays, differenceInCalendarDays, format, isWeekend, parseISO } from 'date-fns';
 import { Holiday, OptimizationSuggestion, UserSettings } from '@/lib/types';
 
 interface SuggestionOptions {
@@ -11,13 +11,27 @@ const isHoliday = (date: Date, holidaySet: Set<string>) => holidaySet.has(format
 
 const isFreeDay = (date: Date, holidaySet: Set<string>) => isWeekend(date) || isHoliday(date, holidaySet);
 
+const shouldCountHoliday = (holiday: Holiday, holidays: Holiday[]) => {
+  const dateObj = parseISO(holiday.date);
+  if (!isWeekend(dateObj)) return true;
+  const hasWeekdayPartner = holidays.some((entry) => {
+    if (entry.date === holiday.date) return false;
+    const otherDate = parseISO(entry.date);
+    if (isWeekend(otherDate)) return false;
+    const distance = Math.abs(differenceInCalendarDays(otherDate, dateObj));
+    return distance <= 1;
+  });
+  return hasWeekdayPartner;
+};
+
 export const generateSmartSuggestions = (
   settings: UserSettings,
   holidays: Holiday[],
   options: SuggestionOptions = {}
 ): OptimizationSuggestion[] => {
   const { requireHoliday = false } = options;
-  const holidaySet = new Set(holidays.map((holiday) => holiday.date));
+  const effectiveHolidays = holidays.filter((holiday) => shouldCountHoliday(holiday, holidays));
+  const holidaySet = new Set(effectiveHolidays.map((holiday) => holiday.date));
   const startOfYear = new Date(Date.UTC(settings.year, 0, 1));
   const endOfYear = new Date(Date.UTC(settings.year, 11, 31));
 

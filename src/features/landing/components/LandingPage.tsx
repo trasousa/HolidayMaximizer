@@ -7,7 +7,7 @@ import {
   useUpdateSettingsMutation,
 } from '@/features/profiles/hooks/useProfiles';
 import { Profile, UserSettings } from '@/lib/types';
-import { fetchSupportedCountries } from '@/lib/services/locationService';
+import { fetchSupportedCountries, fetchCountryRegions } from '@/lib/services/locationService';
 import { Check, Plus, Wand2, Pencil, Trash2 } from 'lucide-react';
 
 const swatches = ['#1d4ed8', '#0ea5e9', '#14b8a6', '#e11d48', '#9333ea', '#f97316'];
@@ -25,6 +25,7 @@ interface FormState {
   color: string;
   allowance: number;
   isoCountryCode?: string;
+  isoRegionCode?: string;
 }
 
 const emptyForm = (): FormState => ({
@@ -33,6 +34,8 @@ const emptyForm = (): FormState => ({
   city: '',
   color: swatches[0],
   allowance: 30,
+  isoCountryCode: undefined,
+  isoRegionCode: undefined,
 });
 
 export const LandingPage = ({ profiles, settings }: LandingPageProps) => {
@@ -48,6 +51,9 @@ export const LandingPage = ({ profiles, settings }: LandingPageProps) => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [countries, setCountries] = useState<{ key: string; value: string }[]>([]);
   const [search, setSearch] = useState('');
+  const [regions, setRegions] = useState<{ key: string; value: string }[]>([]);
+  const [regionSearch, setRegionSearch] = useState('');
+  const [isLoadingRegions, setIsLoadingRegions] = useState(false);
   const [year, setYear] = useState(settings.year);
 
   const createProfile = useCreateProfileMutation();
@@ -58,6 +64,34 @@ export const LandingPage = ({ profiles, settings }: LandingPageProps) => {
   useEffect(() => {
     fetchSupportedCountries().then(setCountries).catch(() => setCountries([]));
   }, []);
+
+  useEffect(() => {
+    if (!formState.isoCountryCode) {
+      setRegions([]);
+      setFormState((prev) => ({ ...prev, isoRegionCode: undefined }));
+      return;
+    }
+    setIsLoadingRegions(true);
+    fetchCountryRegions(formState.isoCountryCode)
+      .then((list) => {
+        setRegions(list);
+        if (list.length === 0) {
+          setFormState((prev) => ({ ...prev, isoRegionCode: undefined }));
+          return;
+        }
+        setFormState((prev) => {
+          if (!prev.isoRegionCode) {
+            return prev;
+          }
+          const stillValid = list.some((region) => region.key === prev.isoRegionCode);
+          if (stillValid) {
+            return prev;
+          }
+          return { ...prev, isoRegionCode: undefined, city: '' };
+        });
+      })
+      .finally(() => setIsLoadingRegions(false));
+  }, [formState.isoCountryCode]);
 
   useEffect(() => {
     setSelectedProfileIds((prev) => prev.filter((id) => profiles.some((profile) => profile.id === id)));
@@ -71,6 +105,11 @@ export const LandingPage = ({ profiles, settings }: LandingPageProps) => {
     if (!search) return countries.slice(0, 10);
     return countries.filter((country) => country.value.toLowerCase().includes(search.toLowerCase())).slice(0, 10);
   }, [countries, search]);
+
+  const filteredRegions = useMemo(() => {
+    if (!regionSearch) return regions.slice(0, 10);
+    return regions.filter((region) => region.value.toLowerCase().includes(regionSearch.toLowerCase())).slice(0, 10);
+  }, [regions, regionSearch]);
 
   const handleCardToggle = (id: string) => {
     setSelectedProfileIds((prev) => (prev.includes(id) ? prev.filter((pid) => pid !== id) : [...prev, id]));
@@ -86,16 +125,23 @@ export const LandingPage = ({ profiles, settings }: LandingPageProps) => {
       color: profile.color,
       allowance: profile.totalAllowance,
       isoCountryCode: profile.isoCountryCode,
+      isoRegionCode: profile.isoRegionCode,
     });
+    setRegionSearch('');
   };
 
   const resetForm = () => {
     setFormState(emptyForm());
     setIsFormOpen(false);
+    setSearch('');
+    setRegionSearch('');
   };
 
   const handleSave = async () => {
-    if (!formState.name || !formState.country) return;
+    const regionRequired = regions.length > 0;
+    if (!formState.name || !formState.country || !formState.isoCountryCode) return;
+    if (!formState.city) return;
+    if (regionRequired && !formState.isoRegionCode) return;
     const payload = {
       name: formState.name.trim(),
       avatar: formState.name.substring(0, 2).toUpperCase(),
@@ -103,6 +149,7 @@ export const LandingPage = ({ profiles, settings }: LandingPageProps) => {
       country: formState.country.trim(),
       city: formState.city.trim(),
       isoCountryCode: formState.isoCountryCode,
+      isoRegionCode: formState.isoRegionCode,
       totalAllowance: formState.allowance,
     };
     if (formState.id) {
@@ -127,6 +174,13 @@ export const LandingPage = ({ profiles, settings }: LandingPageProps) => {
   };
 
   const isSaving = createProfile.isPending || updateProfile.isPending;
+  const regionRequired = regions.length > 0;
+  const canSave =
+    formState.name.trim().length > 0 &&
+    formState.country.trim().length > 0 &&
+    Boolean(formState.isoCountryCode) &&
+    formState.city.trim().length > 0 &&
+    (!regionRequired || Boolean(formState.isoRegionCode));
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-12 space-y-10">
@@ -268,25 +322,35 @@ export const LandingPage = ({ profiles, settings }: LandingPageProps) => {
                 />
               </label>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <label className="text-xs font-semibold text-slate-500">
                   Country
                   <input
                     className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2"
                     value={formState.country}
                     onChange={(event) => {
-                      setFormState((prev) => ({ ...prev, country: event.target.value }));
-                      setSearch(event.target.value);
+                      const value = event.target.value;
+                      setFormState((prev) => ({ ...prev, country: value, isoCountryCode: undefined, isoRegionCode: undefined, city: '' }));
+                      setSearch(value);
+                      setRegionSearch('');
                     }}
                     onFocus={() => setSearch(formState.country)}
+                    placeholder="Search country"
                   />
                 </label>
                 <label className="text-xs font-semibold text-slate-500">
-                  City
+                  City / region
                   <input
                     className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2"
-                    value={formState.city}
-                    onChange={(event) => setFormState((prev) => ({ ...prev, city: event.target.value }))}
+                    value={regionSearch || formState.city}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setRegionSearch(value);
+                      setFormState((prev) => ({ ...prev, city: value, isoRegionCode: undefined }));
+                    }}
+                    onFocus={() => setRegionSearch(formState.city)}
+                    placeholder={regions.length > 0 ? 'Select from list' : 'Enter city'}
+                    disabled={!formState.isoCountryCode}
                   />
                 </label>
               </div>
@@ -297,8 +361,15 @@ export const LandingPage = ({ profiles, settings }: LandingPageProps) => {
                     <button
                       key={country.key}
                       onClick={() => {
-                        setFormState((prev) => ({ ...prev, country: country.value, isoCountryCode: country.key }));
+                        setFormState((prev) => ({
+                          ...prev,
+                          country: country.value,
+                          isoCountryCode: country.key,
+                          isoRegionCode: undefined,
+                          city: '',
+                        }));
                         setSearch('');
+                        setRegionSearch('');
                       }}
                       className="block w-full text-left px-3 py-1 text-sm rounded-lg hover:bg-slate-50"
                     >
@@ -306,6 +377,31 @@ export const LandingPage = ({ profiles, settings }: LandingPageProps) => {
                     </button>
                   ))}
                 </div>
+              )}
+
+              {formState.isoCountryCode && regions.length > 0 && (regionSearch || !formState.isoRegionCode) && (
+                <div className="max-h-32 overflow-y-auto rounded-2xl border border-slate-100 p-2 bg-white">
+                  {isLoadingRegions && <p className="text-xs text-slate-400 px-3 py-1">Loading regions…</p>}
+                  {!isLoadingRegions && filteredRegions.length === 0 && (
+                    <p className="text-xs text-slate-400 px-3 py-1">Start typing to filter city-level counties</p>
+                  )}
+                  {filteredRegions.map((region) => (
+                    <button
+                      key={region.key}
+                      onClick={() => {
+                        setFormState((prev) => ({ ...prev, city: region.value, isoRegionCode: region.key }));
+                        setRegionSearch('');
+                      }}
+                      className="block w-full text-left px-3 py-1 text-sm rounded-lg hover:bg-slate-50"
+                    >
+                      {region.value}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {regionRequired && !formState.isoRegionCode && formState.isoCountryCode && (
+                <p className="text-xs text-amber-600">Select an option from the list so we can fetch city holidays.</p>
               )}
 
               <label className="text-xs font-semibold text-slate-500">
@@ -342,7 +438,7 @@ export const LandingPage = ({ profiles, settings }: LandingPageProps) => {
               <button
                 className="flex-1 rounded-2xl bg-slate-900 text-white py-3 disabled:opacity-40"
                 onClick={handleSave}
-                disabled={isSaving}
+                disabled={!canSave || isSaving}
               >
                 {formState.id ? 'Save changes' : 'Create profile'}
               </button>
