@@ -19,7 +19,7 @@ export const VacationModal = ({ defaultStart = '', defaultEnd = '', onClose, onS
       <div className="glass-panel w-full max-w-md p-6 space-y-4">
         <header className="flex items-center justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Trip</p>
+            <p className="text-xs uppercase tracking-widest text-slate-400">Trip</p>
             <h2 className="text-2xl font-semibold text-slate-900">Add vacation</h2>
           </div>
           <button className="text-slate-400 hover:text-slate-600" onClick={onClose} aria-label="Close">

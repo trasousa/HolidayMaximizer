@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Profile, UserSettings, Vacation } from '@/lib/types';
+import { OptimizationSuggestion, Profile, UserSettings, Vacation } from '@/lib/types';
 import { usePlannerUI } from '@/features/planner/context/PlannerContext';
 import { useProfileHydration } from '@/features/planner/hooks/useProfileHydration';
 import { StatsPanel } from '@/features/stats/components/StatsPanel';
@@ -106,8 +106,8 @@ export const PlannerView = ({ profiles, settings }: PlannerViewProps) => {
     }
   };
 
-  const handleApplySuggestion = async (suggestion: { startDate: string; endDate: string; costInPto: number; id: string; title: string }) => {
-    if (!activeProfile) return;
+  const handleApplySuggestion = async (suggestion: OptimizationSuggestion) => {
+    if (!activeProfile || suggestion.costInPto > remainingPto) return;
     await createVacation.mutateAsync({
       profileId: activeProfile.id,
       startDate: suggestion.startDate,
@@ -184,6 +184,8 @@ export const PlannerView = ({ profiles, settings }: PlannerViewProps) => {
     return { used, commute, total, efficiency: used ? total / used : 0 };
   }, [activeProfile]);
 
+  const remainingPto = Math.max(0, (activeProfile?.totalAllowance ?? 0) - stats.used);
+
   if (!activeProfile) {
     return (
       <div className="min-h-screen flex items-center justify-center text-slate-500">Select or create a profile to begin.</div>
@@ -230,11 +232,11 @@ export const PlannerView = ({ profiles, settings }: PlannerViewProps) => {
 
       <StatsPanel allowance={activeProfile.totalAllowance} used={stats.used} commuteHours={stats.commute} efficiency={stats.efficiency} holidayCount={activeProfile.holidays.length} />
 
-      <main className="grid gap-6 lg:grid-cols-[320px,1fr]">
-        <aside className="space-y-4 order-2 lg:order-1">
+      <main className="grid gap-6 items-start lg:grid-cols-[minmax(0,340px),1fr] xl:grid-cols-[minmax(0,360px),1fr]">
+        <aside className="space-y-4 order-2 lg:order-1 lg:sticky lg:top-8">
           <div className="flex rounded-2xl border border-white/60 bg-white/70 p-1">
             {(['suggestions', 'holidays', 'trips'] as SidebarTab[]).map((tab) => (
-              <button key={tab} onClick={() => setSidebarTab(tab)} className={`flex-1 rounded-2xl px-3 py-2 text-xs font-semibold uppercase tracking-[0.3em] ${sidebarActiveTab === tab ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>
+              <button key={tab} onClick={() => setSidebarTab(tab)} className={`flex-1 rounded-2xl px-3 py-2 text-xs font-semibold uppercase tracking-widest ${sidebarActiveTab === tab ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>
                 {tab}
               </button>
             ))}
@@ -248,6 +250,7 @@ export const PlannerView = ({ profiles, settings }: PlannerViewProps) => {
                 onApply={handleApplySuggestion}
                 onAnalyze={handleAnalyze}
                 isAnalyzing={isAnalyzing}
+                remainingPto={remainingPto}
               />
             )}
             {sidebarActiveTab === 'holidays' && (
@@ -270,7 +273,7 @@ export const PlannerView = ({ profiles, settings }: PlannerViewProps) => {
           </div>
         </aside>
         <section className="space-y-4 order-1 lg:order-2">
-          <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-slate-400">
+          <div className="flex items-center justify-between text-xs uppercase tracking-widest text-slate-400">
             <span className="inline-flex items-center gap-2"><LayoutGrid size={14} /> Full year</span>
             <button onClick={handleAnalyze} className="inline-flex items-center gap-1 text-slate-500 text-[0.65rem]">
               <PanelRightOpen size={12} /> Snap to suggestion
@@ -285,6 +288,7 @@ export const PlannerView = ({ profiles, settings }: PlannerViewProps) => {
             selectionStart={selectionStart}
             onDateClick={handleDateClick}
             showSuggestionsOverlay={showSuggestionsOverlay}
+            remainingPto={remainingPto}
           />
         </section>
       </main>

@@ -131,7 +131,7 @@ export const LandingPage = ({ profiles, settings }: LandingPageProps) => {
   return (
     <div className="max-w-6xl mx-auto px-4 py-12 space-y-10">
       <div className="text-center space-y-4">
-        <p className="text-brand-600 font-semibold uppercase tracking-[0.3em] text-xs">Holiday Maximizer</p>
+        <p className="text-brand-600 font-semibold uppercase tracking-widest text-xs">Holiday Maximizer</p>
         <h1 className="text-4xl md:text-5xl font-semibold text-slate-900 leading-tight">
           Plan PTO that feels intentional, not improvised.
         </h1>
@@ -252,7 +252,7 @@ export const LandingPage = ({ profiles, settings }: LandingPageProps) => {
           <div className="glass-panel w-full max-w-lg p-6 space-y-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">{formState.id ? 'Update' : 'Create'} profile</p>
+                <p className="text-xs uppercase tracking-widest text-slate-400">{formState.id ? 'Update' : 'Create'} profile</p>
                 <h2 className="text-2xl font-semibold text-slate-900">Traveler details</h2>
               </div>
               <button className="text-slate-400 hover:text-slate-600" onClick={resetForm} aria-label="Close">×</button>

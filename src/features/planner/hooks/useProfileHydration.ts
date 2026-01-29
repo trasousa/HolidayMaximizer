@@ -39,7 +39,9 @@ export const useProfileHydration = (settings: UserSettings) => {
       try {
         const isoCode = profile.isoCountryCode ?? (await normalizeCountry(profile.country));
         const holidays = await getPublicHolidays(settings.year, isoCode, profile.isoRegionCode);
-        const suggestions = generateSmartSuggestions(settings, holidays);
+        const suggestions = generateSmartSuggestions(settings, holidays, {
+          requireHoliday: true,
+        });
         setHydration((prev) => ({
           ...prev,
           [profile.id]: {

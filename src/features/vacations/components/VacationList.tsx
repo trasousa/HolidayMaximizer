@@ -25,7 +25,7 @@ export const VacationList = ({ vacations, holidays, onRemove }: VacationListProp
           <article key={vacation.id} className="rounded-2xl border border-slate-100 bg-white/80 p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">{vacation.type}</p>
+                <p className="text-xs uppercase tracking-widest text-slate-400">{vacation.type}</p>
                 <p className="text-lg font-semibold text-slate-900">{vacation.note || 'Untitled trip'}</p>
                 <p className="text-sm text-slate-500">{formatShortRange(vacation.startDate, vacation.endDate)}</p>
               </div>

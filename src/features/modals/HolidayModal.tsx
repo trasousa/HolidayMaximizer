@@ -11,7 +11,7 @@ export const HolidayModal = ({ holiday, year, onClose }: HolidayModalProps) => (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
     <div className="glass-panel relative w-full max-w-sm overflow-hidden">
       <div className="bg-gradient-to-br from-brand-500 to-indigo-500 p-6 text-white">
-        <p className="text-xs uppercase tracking-[0.4em] text-white/70">Holiday {year}</p>
+        <p className="text-xs uppercase tracking-widest text-white/70">Holiday {year}</p>
         <h2 className="text-3xl font-semibold mt-2">{holiday.date}</h2>
         <button className="absolute top-4 right-4 text-white/70 hover:text-white" onClick={onClose} aria-label="Close">
           <X size={20} />

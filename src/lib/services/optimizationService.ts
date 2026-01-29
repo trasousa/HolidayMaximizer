@@ -1,13 +1,22 @@
 import { addDays, format, isWeekend } from 'date-fns';
 import { Holiday, OptimizationSuggestion, UserSettings } from '@/lib/types';
 
+interface SuggestionOptions {
+  requireHoliday?: boolean;
+}
+
 const formatISODate = (date: Date) => format(date, 'yyyy-MM-dd');
 
 const isHoliday = (date: Date, holidaySet: Set<string>) => holidaySet.has(formatISODate(date));
 
 const isFreeDay = (date: Date, holidaySet: Set<string>) => isWeekend(date) || isHoliday(date, holidaySet);
 
-export const generateSmartSuggestions = (settings: UserSettings, holidays: Holiday[]): OptimizationSuggestion[] => {
+export const generateSmartSuggestions = (
+  settings: UserSettings,
+  holidays: Holiday[],
+  options: SuggestionOptions = {}
+): OptimizationSuggestion[] => {
+  const { requireHoliday = false } = options;
   const holidaySet = new Set(holidays.map((holiday) => holiday.date));
   const startOfYear = new Date(Date.UTC(settings.year, 0, 1));
   const endOfYear = new Date(Date.UTC(settings.year, 11, 31));
@@ -59,6 +68,20 @@ export const generateSmartSuggestions = (settings: UserSettings, holidays: Holid
       continue;
     }
 
+    const holidayDatesWithinSuggestion: string[] = [];
+    for (let walker = new Date(cursor); walker <= totalBlockEnd; walker = addDays(walker, 1)) {
+      const iso = formatISODate(walker);
+      if (holidaySet.has(iso)) {
+        holidayDatesWithinSuggestion.push(iso);
+      }
+    }
+
+    const usesHoliday = holidayDatesWithinSuggestion.length > 0;
+    if (requireHoliday && !usesHoliday) {
+      cursor = totalBlockEnd;
+      continue;
+    }
+
     const startDate = formatISODate(gapStart);
     const endDate = formatISODate(addDays(gapEnd, -1));
 
@@ -78,6 +101,8 @@ export const generateSmartSuggestions = (settings: UserSettings, holidays: Holid
       costInPto: gapDays,
       totalDaysOff: totalDuration,
       description: `Swap ${gapDays} PTO day${gapDays > 1 ? 's' : ''} for ${totalDuration} days off in a row.`,
+      usesHoliday,
+      holidayDates: holidayDatesWithinSuggestion,
     });
 
     cursor = totalBlockEnd;

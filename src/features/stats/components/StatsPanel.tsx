@@ -15,11 +15,11 @@ export const StatsPanel = ({ allowance, used, commuteHours, efficiency, holidayC
   const efficiencyLabel = efficiency ? `${efficiency.toFixed(1)}x` : '—';
 
   return (
-    <section className="glass-panel px-6 py-4 flex flex-col gap-4 md:flex-row md:items-center bg-gradient-to-br from-white via-white to-brand-50">
+    <section className="glass-panel px-6 py-4 flex flex-col gap-6 lg:flex-row lg:items-center bg-gradient-to-br from-white via-white to-brand-50">
       <div className="flex-1 space-y-2">
         <div className="flex items-end justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-slate-400">PTO balance</p>
+            <p className="text-xs uppercase tracking-widest text-slate-400">PTO balance</p>
             <p className="text-3xl font-semibold text-slate-900">{remaining} days</p>
           </div>
           <p className="text-sm text-slate-500">of {allowance}</p>
@@ -34,7 +34,7 @@ export const StatsPanel = ({ allowance, used, commuteHours, efficiency, holidayC
           />
         </div>
       </div>
-      <div className="flex-1 grid grid-cols-3 gap-4 text-center">
+      <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 gap-4 text-center">
         <StatBadge label="Holidays" icon={<Calendar size={16} />} value={holidayCount} />
         <StatBadge label="Multiplier" icon={<Sparkles size={16} />} value={efficiencyLabel} />
         <StatBadge label="Commute" icon={<Clock size={16} />} value={`${commuteHours}h`} />
@@ -47,7 +47,7 @@ const StatBadge = ({ label, value, icon }: { label: string; value: string | numb
   <div className="rounded-2xl border border-white/60 bg-gradient-to-br from-white via-white to-slate-50 px-3 py-2 shadow-sm">
     <div className="flex items-center justify-center gap-2 text-slate-400 text-xs">
       {icon}
-      <span className="uppercase tracking-[0.2em]">{label}</span>
+      <span className="uppercase tracking-wide">{label}</span>
     </div>
     <p className="text-xl font-semibold text-slate-900">{value}</p>
   </div>

@@ -22,7 +22,7 @@ export const SettingsModal = ({ settings, onClose, onSave, isSaving }: SettingsM
       <div className="glass-panel w-full max-w-lg p-6 space-y-5">
         <header className="flex items-center justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Optimizer</p>
+            <p className="text-xs uppercase tracking-widest text-slate-400">Optimizer</p>
             <h2 className="text-2xl font-semibold text-slate-900">Tuning</h2>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600" aria-label="Close">

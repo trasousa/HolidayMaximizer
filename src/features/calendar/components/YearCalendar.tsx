@@ -10,6 +10,7 @@ interface YearCalendarProps {
   selectionStart: string | null;
   onDateClick: (date: string) => void;
   showSuggestionsOverlay: boolean;
+  remainingPto: number;
 }
 
 const MONTHS = [
@@ -38,8 +39,11 @@ export const YearCalendar = ({
   selectionStart,
   onDateClick,
   showSuggestionsOverlay,
+  remainingPto,
 }: YearCalendarProps) => {
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId);
+  const affordableSuggestions = activeProfile?.suggestions.filter((suggestion) => suggestion.costInPto <= remainingPto) ?? [];
+  const affordableActiveSuggestion = activeSuggestion && activeSuggestion.costInPto <= remainingPto ? activeSuggestion : null;
 
   const renderMonth = (monthIndex: number) => {
     const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
@@ -66,11 +70,15 @@ export const YearCalendar = ({
             .map((vacation) => profile.color)
         );
 
-      const isSuggested = activeSuggestion && dateStr >= activeSuggestion.startDate && dateStr <= activeSuggestion.endDate;
+      const isSuggested = Boolean(
+        affordableActiveSuggestion &&
+          dateStr >= affordableActiveSuggestion.startDate &&
+          dateStr <= affordableActiveSuggestion.endDate
+      );
       const overlaySuggested =
         showSuggestionsOverlay &&
         !activeVacation &&
-        activeProfile?.suggestions.some((suggestion) => dateStr >= suggestion.startDate && dateStr <= suggestion.endDate);
+        affordableSuggestions.some((suggestion) => dateStr >= suggestion.startDate && dateStr <= suggestion.endDate);
 
       const isSelectionStart = selectionStart === dateStr;
 
@@ -132,7 +140,7 @@ export const YearCalendar = ({
           <h3 className="text-lg font-semibold text-slate-900">{MONTHS[monthIndex]}</h3>
           <span className="text-xs text-slate-400">{year}</span>
         </header>
-        <div className="grid grid-cols-7 gap-1 text-center text-[0.65rem] font-semibold uppercase tracking-[0.3em] text-slate-400">
+        <div className="grid grid-cols-7 gap-1 text-center text-[0.65rem] font-semibold uppercase tracking-widest text-slate-400">
           {WEEKDAYS.map((weekday) => (
             <span key={weekday}>{weekday}</span>
           ))}
@@ -145,7 +153,9 @@ export const YearCalendar = ({
   };
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{MONTHS.map((_, monthIndex) => renderMonth(monthIndex))}</div>
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      {MONTHS.map((_, monthIndex) => renderMonth(monthIndex))}
+    </div>
   );
 };
 

@@ -17,6 +17,8 @@ export interface OptimizationSuggestion {
   costInPto: number;
   totalDaysOff: number;
   description: string;
+  usesHoliday: boolean;
+  holidayDates: string[];
 }
 
 export type VacationType = 'PTO' | 'RemoteWork' | 'Unpaid';

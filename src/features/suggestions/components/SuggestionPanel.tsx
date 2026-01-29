@@ -8,6 +8,7 @@ interface SuggestionPanelProps {
   onApply: (suggestion: OptimizationSuggestion) => void;
   onAnalyze: () => void;
   isAnalyzing: boolean;
+  remainingPto: number;
 }
 
 export const SuggestionPanel = ({
@@ -17,11 +18,12 @@ export const SuggestionPanel = ({
   onApply,
   onAnalyze,
   isAnalyzing,
+  remainingPto,
 }: SuggestionPanelProps) => (
   <div className="space-y-4">
     <div className="flex items-center justify-between">
       <div>
-        <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Optimization</p>
+        <p className="text-xs uppercase tracking-widest text-slate-400">Optimization</p>
         <p className="text-lg font-semibold text-slate-900">{suggestions.length} bridges</p>
       </div>
       <button
@@ -42,6 +44,7 @@ export const SuggestionPanel = ({
     <div className="space-y-3">
       {suggestions.map((suggestion, index) => {
         const isActive = suggestion.id === activeSuggestionId;
+        const isAffordable = suggestion.costInPto <= remainingPto;
         const accents = [
           'from-brand-500/15 via-brand-400/10 to-brand-300/5 border-brand-100',
           'from-emerald-500/15 via-emerald-400/10 to-emerald-300/5 border-emerald-100',
@@ -52,11 +55,11 @@ export const SuggestionPanel = ({
         return (
           <div
             key={suggestion.id}
-            className={`rounded-2xl border p-4 transition hover:-translate-y-0.5 ${
+            className={`rounded-2xl border p-4 transition ${
               isActive
-                ? 'border-brand-400 bg-brand-50/80 ring-2 ring-brand-200'
+                ? 'border-brand-400 bg-brand-50/80 ring-2 ring-brand-200 shadow-md'
                 : `bg-gradient-to-br ${accentClass}`
-            }`}
+            } ${isAffordable ? 'hover:-translate-y-0.5' : 'opacity-60 cursor-not-allowed'}`}
           >
             <div className="flex items-center justify-between">
               <div>
@@ -64,14 +67,23 @@ export const SuggestionPanel = ({
                 <p className="text-lg font-semibold text-slate-900">{suggestion.title}</p>
               </div>
               <div className="text-right">
-                <p className="text-xs text-slate-400 uppercase tracking-[0.3em]">Total days</p>
+                <p className="text-xs text-slate-400 uppercase tracking-widest">Total days</p>
                 <p className="text-xl font-bold text-slate-900">{suggestion.totalDaysOff}</p>
               </div>
             </div>
+            <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+              <span>{suggestion.costInPto} PTO days</span>
+              {!isAffordable && <span className="text-amber-700 font-semibold">Need {suggestion.costInPto - remainingPto} more PTO</span>}
+            </div>
             <div className="mt-3 flex gap-2">
               <button
-                onClick={() => onPreview(suggestion)}
-                className={`flex-1 rounded-full border px-3 py-2 text-sm font-medium transition ${isActive ? 'border-rose-200 text-rose-600 bg-rose-50' : 'border-slate-200 text-slate-600 hover:border-brand-200 hover:text-brand-600'}`}
+                onClick={() => isAffordable && onPreview(suggestion)}
+                disabled={!isAffordable}
+                className={`flex-1 rounded-full border px-3 py-2 text-sm font-medium transition ${
+                  isActive
+                    ? 'border-rose-200 text-rose-600 bg-rose-50'
+                    : 'border-slate-200 text-slate-600 hover:border-brand-200 hover:text-brand-600'
+                } ${!isAffordable ? 'opacity-70 cursor-not-allowed' : ''}`}
               >
                 {isActive ? (
                   <span className="inline-flex items-center gap-2"><EyeOff size={14} /> Hide preview</span>
@@ -80,8 +92,9 @@ export const SuggestionPanel = ({
                 )}
               </button>
               <button
-                onClick={() => onApply(suggestion)}
-                className="flex-1 rounded-full bg-slate-900 text-white px-3 py-2 text-sm font-semibold"
+                onClick={() => isAffordable && onApply(suggestion)}
+                disabled={!isAffordable}
+                className="flex-1 rounded-full bg-slate-900 text-white px-3 py-2 text-sm font-semibold disabled:bg-slate-300 disabled:text-slate-500"
               >
                 Apply
               </button>

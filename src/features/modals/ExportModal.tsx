@@ -20,7 +20,7 @@ export const ExportModal = ({ profileName, onExport, onClose }: ExportModalProps
       <div className="glass-panel w-full max-w-md p-6 space-y-5">
         <header className="flex items-center justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Export schedule</p>
+            <p className="text-xs uppercase tracking-widest text-slate-400">Export schedule</p>
             <h2 className="text-2xl font-semibold text-slate-900">{profileName}</h2>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600" aria-label="Close">
