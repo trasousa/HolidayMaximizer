@@ -40,10 +40,24 @@ export const SuggestionPanel = ({
       </div>
     )}
     <div className="space-y-3">
-      {suggestions.map((suggestion) => {
+      {suggestions.map((suggestion, index) => {
         const isActive = suggestion.id === activeSuggestionId;
+        const accents = [
+          'from-brand-500/15 via-brand-400/10 to-brand-300/5 border-brand-100',
+          'from-emerald-500/15 via-emerald-400/10 to-emerald-300/5 border-emerald-100',
+          'from-sky-500/15 via-sky-400/10 to-sky-300/5 border-sky-100',
+          'from-amber-500/15 via-amber-400/10 to-amber-300/5 border-amber-100',
+        ];
+        const accentClass = accents[index % accents.length];
         return (
-          <div key={suggestion.id} className={`rounded-2xl border p-4 transition hover:-translate-y-0.5 ${isActive ? 'border-brand-400 bg-brand-50/60' : 'border-slate-100 bg-white/70'}`}>
+          <div
+            key={suggestion.id}
+            className={`rounded-2xl border p-4 transition hover:-translate-y-0.5 ${
+              isActive
+                ? 'border-brand-400 bg-brand-50/80 ring-2 ring-brand-200'
+                : `bg-gradient-to-br ${accentClass}`
+            }`}
+          >
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-slate-500">{suggestion.description}</p>

@@ -127,7 +127,7 @@ export const YearCalendar = ({
     }
 
     return (
-      <section key={monthIndex} className="rounded-3xl border border-white/60 bg-white/70 p-4 space-y-2" aria-label={MONTHS[monthIndex]}>
+      <section key={monthIndex} className="rounded-3xl border border-slate-100 bg-white p-4 space-y-2 shadow-sm" aria-label={MONTHS[monthIndex]}>
         <header className="flex items-center justify-between">
           <h3 className="text-lg font-semibold text-slate-900">{MONTHS[monthIndex]}</h3>
           <span className="text-xs text-slate-400">{year}</span>

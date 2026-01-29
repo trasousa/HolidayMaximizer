@@ -15,7 +15,7 @@ export const StatsPanel = ({ allowance, used, commuteHours, efficiency, holidayC
   const efficiencyLabel = efficiency ? `${efficiency.toFixed(1)}x` : '—';
 
   return (
-    <section className="glass-panel px-6 py-4 flex flex-col gap-4 md:flex-row md:items-center">
+    <section className="glass-panel px-6 py-4 flex flex-col gap-4 md:flex-row md:items-center bg-gradient-to-br from-white via-white to-brand-50">
       <div className="flex-1 space-y-2">
         <div className="flex items-end justify-between">
           <div>
@@ -25,7 +25,13 @@ export const StatsPanel = ({ allowance, used, commuteHours, efficiency, holidayC
           <p className="text-sm text-slate-500">of {allowance}</p>
         </div>
         <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-          <div className={`h-full rounded-full ${remaining < 0 ? 'bg-rose-500' : 'bg-brand-500'}`} style={{ width: `${progress}%` }} />
+          <div
+            className="h-full rounded-full transition-all duration-500"
+            style={{
+              width: `${progress}%`,
+              background: remaining < 0 ? 'linear-gradient(90deg,#fb7185,#f43f5e)' : 'linear-gradient(90deg,#7c3aed,#2563eb)',
+            }}
+          />
         </div>
       </div>
       <div className="flex-1 grid grid-cols-3 gap-4 text-center">
@@ -38,7 +44,7 @@ export const StatsPanel = ({ allowance, used, commuteHours, efficiency, holidayC
 };
 
 const StatBadge = ({ label, value, icon }: { label: string; value: string | number; icon: ReactNode }) => (
-  <div className="rounded-2xl border border-white/60 bg-white/80 backdrop-blur px-3 py-2">
+  <div className="rounded-2xl border border-white/60 bg-gradient-to-br from-white via-white to-slate-50 px-3 py-2 shadow-sm">
     <div className="flex items-center justify-center gap-2 text-slate-400 text-xs">
       {icon}
       <span className="uppercase tracking-[0.2em]">{label}</span>

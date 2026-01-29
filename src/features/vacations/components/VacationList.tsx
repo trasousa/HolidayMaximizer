@@ -18,7 +18,7 @@ export const VacationList = ({ vacations, holidays, onRemove }: VacationListProp
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 max-h-[32rem] overflow-y-auto pr-1">
       {vacations.map((vacation) => {
         const businessDays = countBusinessDays(vacation.startDate, vacation.endDate, holidays);
         return (
