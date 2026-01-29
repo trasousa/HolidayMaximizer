@@ -4,19 +4,36 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -k \"npm:dev:api\" \"npm:dev:client\"",
+    "dev:client": "vite",
+    "dev:api": "cross-env PORT=4173 nodemon --watch server --ext js server/app.js",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node server/app.js"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.90.20",
+    "better-sqlite3": "^12.6.2",
+    "clsx": "^2.1.1",
+    "cors": "^2.8.6",
+    "date-fns": "^4.1.0",
+    "express": "^5.2.1",
     "lucide-react": "^0.563.0",
-    "recharts": "^3.7.0",
+    "nanoid": "^5.1.6",
+    "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react": "^19.2.4"
+    "recharts": "^3.7.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "^10.4.23",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "nodemon": "^3.1.11",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.15",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }
