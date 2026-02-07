@@ -1,18 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  createProfile,
-  createVacation,
-  deleteProfile,
-  deleteVacationRequest,
-  fetchProfiles,
-  fetchSettings,
-  SaveProfilePayload,
-  SaveVacationPayload,
-  updateProfile,
-  updateVacationRequest,
-  updateSettingsRequest,
-} from '@/features/profiles/api/profileApi';
-import { Profile, UserSettings } from '@/lib/types';
+import { storage } from '@/lib/storage';
+import { Profile, UserSettings, SaveProfilePayload, SaveVacationPayload } from '@/lib/types';
 
 export const PROFILE_KEYS = {
   all: ['profiles'] as const,
@@ -22,13 +10,13 @@ export const PROFILE_KEYS = {
 export const useProfilesQuery = () =>
   useQuery<Profile[]>({
     queryKey: PROFILE_KEYS.all,
-    queryFn: fetchProfiles,
+    queryFn: () => storage.getProfiles(),
   });
 
 export const useSettingsQuery = () =>
   useQuery<UserSettings>({
     queryKey: PROFILE_KEYS.settings,
-    queryFn: fetchSettings,
+    queryFn: () => storage.getSettings(),
   });
 
 const invalidateProfiles = (queryClient: ReturnType<typeof useQueryClient>) => {
@@ -38,7 +26,7 @@ const invalidateProfiles = (queryClient: ReturnType<typeof useQueryClient>) => {
 export const useCreateProfileMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: SaveProfilePayload) => createProfile(payload),
+    mutationFn: (payload: SaveProfilePayload) => storage.createProfile(payload),
     onSuccess: () => invalidateProfiles(queryClient),
   });
 };
@@ -46,7 +34,7 @@ export const useCreateProfileMutation = () => {
 export const useUpdateProfileMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, payload }: { id: string; payload: SaveProfilePayload }) => updateProfile(id, payload),
+    mutationFn: ({ id, payload }: { id: string; payload: SaveProfilePayload }) => storage.updateProfile(id, payload),
     onSuccess: () => invalidateProfiles(queryClient),
   });
 };
@@ -54,7 +42,7 @@ export const useUpdateProfileMutation = () => {
 export const useDeleteProfileMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => deleteProfile(id),
+    mutationFn: (id: string) => storage.deleteProfile(id),
     onSuccess: () => invalidateProfiles(queryClient),
   });
 };
@@ -62,7 +50,7 @@ export const useDeleteProfileMutation = () => {
 export const useCreateVacationMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: SaveVacationPayload) => createVacation(payload),
+    mutationFn: (payload: SaveVacationPayload) => storage.createVacation(payload),
     onSuccess: () => invalidateProfiles(queryClient),
   });
 };
@@ -71,7 +59,7 @@ export const useUpdateVacationMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: Omit<SaveVacationPayload, 'profileId'> }) =>
-      updateVacationRequest(id, payload),
+      storage.updateVacation(id, payload),
     onSuccess: () => invalidateProfiles(queryClient),
   });
 };
@@ -79,7 +67,7 @@ export const useUpdateVacationMutation = () => {
 export const useDeleteVacationMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => deleteVacationRequest(id),
+    mutationFn: (id: string) => storage.deleteVacation(id),
     onSuccess: () => invalidateProfiles(queryClient),
   });
 };
@@ -87,7 +75,7 @@ export const useDeleteVacationMutation = () => {
 export const useUpdateSettingsMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: UserSettings) => updateSettingsRequest(payload),
+    mutationFn: (payload: UserSettings) => storage.updateSettings(payload),
     onSuccess: (data) => {
       queryClient.setQueryData<UserSettings>(PROFILE_KEYS.settings, data);
     },

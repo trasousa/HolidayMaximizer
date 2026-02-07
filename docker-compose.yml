@@ -1,0 +1,11 @@
+services:
+  holidaymaximizer:
+    build: .
+    container_name: holidaymaximizer
+    ports:
+      - "4173:4173"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - VITE_APP_MODE=SERVER_BASED
+    restart: unless-stopped
