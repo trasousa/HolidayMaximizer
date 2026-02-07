@@ -31,7 +31,8 @@ const ensureSchema = () => {
       city TEXT NOT NULL,
       isoCountryCode TEXT,
       isoRegionCode TEXT,
-      totalAllowance INTEGER NOT NULL DEFAULT 30
+      totalAllowance INTEGER NOT NULL DEFAULT 30,
+      categories TEXT
     );
   `).run();
 
@@ -84,6 +85,7 @@ const mapProfileRow = (row) => ({
   isoCountryCode: row.isoCountryCode || undefined,
   isoRegionCode: row.isoRegionCode || undefined,
   totalAllowance: row.totalAllowance,
+  categories: row.categories ? JSON.parse(row.categories) : [],
 });
 
 const getVacationsForProfile = db.prepare('SELECT * FROM vacations WHERE profileId = ? ORDER BY startDate ASC');
@@ -122,15 +124,15 @@ app.get('/api/profiles', (_req, res) => {
 });
 
 app.post('/api/profiles', (req, res) => {
-  const { name, avatar, color, country, city, isoCountryCode, isoRegionCode, totalAllowance = 30 } = req.body ?? {};
+  const { name, avatar, color, country, city, isoCountryCode, isoRegionCode, totalAllowance = 30, categories = [] } = req.body ?? {};
   if (!name || !avatar || !color || !country || !city) {
     return res.status(400).json({ message: 'Missing required fields' });
   }
   const id = nanoid();
   db.prepare(`
-    INSERT INTO profiles (id, name, avatar, color, country, city, isoCountryCode, isoRegionCode, totalAllowance)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, avatar, color, country, city, isoCountryCode || null, isoRegionCode || null, totalAllowance);
+    INSERT INTO profiles (id, name, avatar, color, country, city, isoCountryCode, isoRegionCode, totalAllowance, categories)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, avatar, color, country, city, isoCountryCode || null, isoRegionCode || null, totalAllowance, JSON.stringify(categories));
   res.status(201).json({
     id,
     name,
@@ -141,6 +143,7 @@ app.post('/api/profiles', (req, res) => {
     isoCountryCode,
     isoRegionCode,
     totalAllowance,
+    categories,
     holidays: [],
     suggestions: [],
     vacations: [],
@@ -149,7 +152,7 @@ app.post('/api/profiles', (req, res) => {
 
 app.put('/api/profiles/:id', (req, res) => {
   const { id } = req.params;
-  const { name, avatar, color, country, city, isoCountryCode, isoRegionCode, totalAllowance = 30 } = req.body ?? {};
+  const { name, avatar, color, country, city, isoCountryCode, isoRegionCode, totalAllowance = 30, categories = [] } = req.body ?? {};
   const existing = db.prepare('SELECT id FROM profiles WHERE id = ?').get(id);
   if (!existing) {
     return res.status(404).json({ message: 'Profile not found' });
@@ -163,9 +166,10 @@ app.put('/api/profiles/:id', (req, res) => {
       city = ?,
       isoCountryCode = ?,
       isoRegionCode = ?,
-      totalAllowance = ?
+      totalAllowance = ?,
+      categories = ?
     WHERE id = ?
-  `).run(name, avatar, color, country, city, isoCountryCode || null, isoRegionCode || null, totalAllowance, id);
+  `).run(name, avatar, color, country, city, isoCountryCode || null, isoRegionCode || null, totalAllowance, JSON.stringify(categories), id);
   const updated = db.prepare('SELECT * FROM profiles WHERE id = ?').get(id);
   res.json({
     ...mapProfileRow(updated),

@@ -59,7 +59,7 @@ export const generateICSFile = (profile: Profile, options: ExportOptions): void 
       const icsEnd = formatDateValue(addDays(block.end, 1));
       let description = vacation.note || `Vacation ${index + 1}`;
       if (options.includeCommuteDetails && vacation.commuteHours) {
-        description += `\n\nCommute hours saved: ${vacation.commuteHours}`;
+        description += `\n\nCommute hours: ${vacation.commuteHours}`;
       }
       const title = vacation.note ?? 'Vacation';
       events.push(

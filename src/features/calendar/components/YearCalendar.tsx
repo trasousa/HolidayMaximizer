@@ -62,7 +62,9 @@ export const YearCalendar = ({
       const holidayMeta = activeProfile?.holidays.find((holiday) => holiday.date === dateStr);
       const isHoliday = Boolean(holidayMeta);
       const isRegionalHoliday = holidayMeta?.scope === 'regional';
-      const activeVacation = activeProfile?.vacations.some((vacation) => dateStr >= vacation.startDate && dateStr <= vacation.endDate);
+      
+      const activeVacationObj = activeProfile?.vacations.find((vacation) => dateStr >= vacation.startDate && dateStr <= vacation.endDate);
+      const activeVacation = Boolean(activeVacationObj);
 
       const overlayVacations = profiles
         .filter((profile) => comparedProfileIds.includes(profile.id))
@@ -84,48 +86,49 @@ export const YearCalendar = ({
 
       const isSelectionStart = selectionStart === dateStr;
 
-      let baseClasses = 'rounded-xl border text-sm flex items-center justify-center relative focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 transition shadow-sm';
+      let baseClasses = 'group rounded-xl border text-sm flex items-center justify-center relative focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 transition-all duration-200 shadow-sm';
       let borderClass = 'border-slate-100';
-      let textClass = 'text-slate-700';
-      let backgroundClass = 'bg-white/80 hover:bg-white';
+      let textClass = 'text-slate-700 font-medium';
+      let backgroundClass = 'bg-white/80 hover:bg-white hover:scale-105 hover:shadow-md hover:z-10';
       const dynamicStyle: CSSProperties = {};
 
       if (activeVacation && activeProfile) {
-        backgroundClass = '';
-        textClass = 'text-white font-semibold';
+        const category = activeProfile.categories.find(c => c.id === activeVacationObj.type);
+        backgroundClass = 'hover:scale-110 hover:shadow-lg hover:z-10';
+        textClass = 'text-white font-bold';
         borderClass = 'border-transparent';
-        dynamicStyle.backgroundColor = activeProfile.color;
+        dynamicStyle.backgroundColor = category?.color || activeProfile.color;
       } else if (isSuggested) {
-        backgroundClass = 'bg-brand-50';
+        backgroundClass = 'bg-brand-50 hover:bg-brand-100';
         borderClass = 'border-brand-200';
-        textClass = 'text-brand-700 font-semibold';
+        textClass = 'text-brand-700 font-bold';
       } else if (overlaySuggested) {
-        backgroundClass = 'bg-amber-50';
+        backgroundClass = 'bg-amber-50 hover:bg-amber-100';
         borderClass = 'border-amber-100';
-        textClass = 'text-amber-700';
+        textClass = 'text-amber-700 font-medium';
       } else if (isHoliday) {
         if (isRegionalHoliday) {
-          backgroundClass = 'bg-emerald-50';
+          backgroundClass = 'bg-emerald-50 hover:bg-emerald-100';
           borderClass = 'border-emerald-200';
-          textClass = 'text-emerald-700 font-semibold';
+          textClass = 'text-emerald-700 font-bold';
         } else {
-          backgroundClass = 'bg-rose-50';
+          backgroundClass = 'bg-rose-50 hover:bg-rose-100';
           borderClass = 'border-rose-200';
-          textClass = 'text-rose-600 font-semibold';
+          textClass = 'text-rose-600 font-bold';
         }
       } else if (isWeekend) {
-        backgroundClass = 'bg-slate-50';
+        backgroundClass = 'bg-slate-50 hover:bg-slate-100';
         textClass = 'text-slate-400';
       }
 
-      const selectionRing = isSelectionStart ? 'ring-2 ring-slate-900' : '';
+      const selectionRing = isSelectionStart ? 'ring-2 ring-slate-900 ring-offset-2 z-20 scale-110' : '';
 
       cells.push(
         <button
           key={dateStr}
           type="button"
           onClick={() => onDateClick(dateStr)}
-          className={`${baseClasses} ${borderClass} ${textClass} ${backgroundClass} ${selectionRing} min-h-10`}
+          className={`${baseClasses} ${borderClass} ${textClass} ${backgroundClass} ${selectionRing} min-h-11`}
           style={dynamicStyle}
           aria-pressed={isSelectionStart}
         >
@@ -133,7 +136,7 @@ export const YearCalendar = ({
           {overlayVacations.length > 0 && !activeVacation && (
             <div className="absolute bottom-1 left-1 right-1 flex gap-0.5">
               {overlayVacations.slice(0, 3).map((color, index) => (
-                <span key={`${color}-${index}`} className="flex-1 h-1 rounded-full" style={{ backgroundColor: color }} aria-hidden />
+                <span key={`${color}-${index}`} className="flex-1 h-1 rounded-full shadow-sm" style={{ backgroundColor: color }} aria-hidden />
               ))}
             </div>
           )}

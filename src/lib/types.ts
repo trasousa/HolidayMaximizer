@@ -22,7 +22,14 @@ export interface OptimizationSuggestion {
   holidayDates: string[];
 }
 
-export type VacationType = 'PTO' | 'RemoteWork' | 'Unpaid';
+export interface VacationCategory {
+  id: string;
+  name: string;
+  color: string;
+  isPto: boolean;
+}
+
+export type VacationType = 'PTO' | 'RemoteWork' | 'Unpaid' | string;
 
 export interface Vacation {
   id: string;
@@ -47,6 +54,7 @@ export interface Profile {
   holidays: Holiday[];
   vacations: Vacation[];
   suggestions: OptimizationSuggestion[];
+  categories: VacationCategory[];
 }
 
 export interface UserSettings {

@@ -1,5 +1,5 @@
 import { apiRequest } from '@/lib/api/client';
-import { Profile, Vacation, UserSettings } from '@/lib/types';
+import { Profile, Vacation, UserSettings, VacationCategory } from '@/lib/types';
 
 export const fetchProfiles = () => apiRequest<Profile[]>('/profiles');
 
@@ -13,6 +13,7 @@ export interface SaveProfilePayload {
   isoCountryCode?: string;
   isoRegionCode?: string;
   totalAllowance: number;
+  categories: VacationCategory[];
 }
 
 export const createProfile = (payload: SaveProfilePayload) => apiRequest<Profile>('/profiles', {
