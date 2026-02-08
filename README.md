@@ -3,7 +3,7 @@
 Smart PTO planner that helps you maximize your time off by finding "bridge" days between public holidays.
 
 ## 🔗 Live Demo
-Visit the live app at: [holidaycalendar.btopencloude.com](https://holidaycalendar.btopencloude.com)
+Visit the live app at: [holidaycalendar.btopencloude.com](https://holidaycalendar.btopencloud.com)
 
 ## ✨ Features
 
