@@ -1,4 +1,5 @@
 import { Profile } from '@/lib/types';
+import { addDaysISO, DEFAULT_WEEKEND, eachDate, isWeekendDay } from '@/lib/utils/date';
 
 export interface ExportOptions {
   excludeWeekends: boolean;
@@ -8,85 +9,69 @@ export interface ExportOptions {
 
 const formatDateToICS = (date: Date): string => date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
 
-const formatDateValue = (date: Date): string => date.toISOString().split('T')[0].replace(/-/g, '');
+const toICSDate = (iso: string) => iso.replace(/-/g, '');
 
-const addDays = (date: Date, days: number) => {
-  const result = new Date(date);
-  result.setDate(result.getDate() + days);
-  return result;
+/** RFC 5545 text escaping. */
+const escapeText = (text: string) => text.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+
+/** Split a date range into consecutive runs, skipping excluded days. */
+const splitIntoBlocks = (start: string, end: string, exclude: (date: string) => boolean) => {
+  const blocks: { start: string; end: string }[] = [];
+  let current: { start: string; end: string } | null = null;
+  for (const date of eachDate(start, end)) {
+    if (exclude(date)) {
+      current = null;
+      continue;
+    }
+    if (current) current.end = date;
+    else blocks.push((current = { start: date, end: date }));
+  }
+  return blocks;
 };
 
-const toDateStr = (date: Date) => date.toISOString().split('T')[0];
-
-export const generateICSFile = (profile: Profile, options: ExportOptions): void => {
-  const events: string[] = [];
+export const buildICS = (profile: Profile, options: ExportOptions): string => {
   const NOW = formatDateToICS(new Date());
+  const weekendDays = profile.weekendDays ?? DEFAULT_WEEKEND;
+  const holidaySet = new Set(profile.holidays.map((holiday) => holiday.date));
+  const categoryName = (type: string) => profile.categories.find((c) => c.id === type)?.name ?? type;
 
-  profile.vacations.forEach((vacation, index) => {
-    const blocks: { start: Date; end: Date }[] = [];
-    const start = new Date(vacation.startDate);
-    const end = new Date(vacation.endDate);
-
-    let blockStart: Date | null = null;
-    let lastValid: Date | null = null;
-    for (let cursor = new Date(start); cursor <= end; cursor = addDays(cursor, 1)) {
-      const dateStr = toDateStr(cursor);
-      const isWeekend = cursor.getDay() === 0 || cursor.getDay() === 6;
-      const isHoliday = profile.holidays.some((holiday) => holiday.date === dateStr);
-      const shouldExclude = (options.excludeWeekends && isWeekend) || (options.excludeHolidays && isHoliday);
-
-      if (shouldExclude) {
-        if (blockStart && lastValid) {
-          blocks.push({ start: blockStart, end: lastValid });
-          blockStart = null;
-          lastValid = null;
-        }
-        continue;
-      }
-
-      if (!blockStart) {
-        blockStart = new Date(cursor);
-      }
-      lastValid = new Date(cursor);
+  const events = profile.vacations.flatMap((vacation) => {
+    const exclude = (date: string) =>
+      (options.excludeWeekends && isWeekendDay(date, weekendDays)) || (options.excludeHolidays && holidaySet.has(date));
+    const title = vacation.note || categoryName(vacation.type);
+    let description = `${categoryName(vacation.type)} – planned with Holiday Maximizer`;
+    if (options.includeCommuteDetails && vacation.commuteHours) {
+      description += `\nCommute hours: ${vacation.commuteHours}`;
     }
 
-    if (blockStart && lastValid) {
-      blocks.push({ start: blockStart, end: lastValid });
-    }
-
-    blocks.forEach((block, idx) => {
-      const icsStart = formatDateValue(block.start);
-      const icsEnd = formatDateValue(addDays(block.end, 1));
-      let description = vacation.note || `Vacation ${index + 1}`;
-      if (options.includeCommuteDetails && vacation.commuteHours) {
-        description += `\n\nCommute hours: ${vacation.commuteHours}`;
-      }
-      const title = vacation.note ?? 'Vacation';
-      events.push(
-        [
-          'BEGIN:VEVENT',
-          `UID:${vacation.id}-${idx}@holidaymaximizer`,
-          `DTSTAMP:${NOW}`,
-          `DTSTART;VALUE=DATE:${icsStart}`,
-          `DTEND;VALUE=DATE:${icsEnd}`,
-          `SUMMARY:${title}`,
-          `DESCRIPTION:${description}`,
-          'STATUS:CONFIRMED',
-          'TRANSP:OPAQUE',
-          'END:VEVENT',
-        ].join('\r\n')
-      );
-    });
+    return splitIntoBlocks(vacation.startDate, vacation.endDate, exclude).map((block, idx) =>
+      [
+        'BEGIN:VEVENT',
+        `UID:${vacation.id}-${idx}@holidaymaximizer`,
+        `DTSTAMP:${NOW}`,
+        `DTSTART;VALUE=DATE:${toICSDate(block.start)}`,
+        // DTEND is exclusive for all-day events.
+        `DTEND;VALUE=DATE:${toICSDate(addDaysISO(block.end, 1))}`,
+        `SUMMARY:${escapeText(title)}`,
+        `DESCRIPTION:${escapeText(description)}`,
+        'STATUS:CONFIRMED',
+        'TRANSP:OPAQUE',
+        'END:VEVENT',
+      ].join('\r\n')
+    );
   });
 
-  const calendar = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//HolidayMaximizer//Planner//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', ...events, 'END:VCALENDAR'].join('\r\n');
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//HolidayMaximizer//Planner//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', ...events, 'END:VCALENDAR'].join('\r\n');
+};
 
-  const blob = new Blob([calendar], { type: 'text/calendar;charset=utf-8' });
+export const generateICSFile = (profile: Profile, options: ExportOptions, year?: number): void => {
+  const blob = new Blob([buildICS(profile, options)], { type: 'text/calendar;charset=utf-8' });
   const link = document.createElement('a');
-  const year = profile.vacations[0]?.startDate?.split('-')[0] ?? 'plan';
-  link.href = URL.createObjectURL(blob);
-  link.setAttribute('download', `${profile.name}_vacations_${year}.ics`);
+  const url = URL.createObjectURL(blob);
+  link.href = url;
+  link.setAttribute('download', `${profile.name}_vacations_${year ?? 'plan'}.ics`);
   document.body.appendChild(link);
   link.click();
   link.remove();
+  URL.revokeObjectURL(url);
 };

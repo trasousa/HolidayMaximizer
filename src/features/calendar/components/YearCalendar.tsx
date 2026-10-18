@@ -1,5 +1,7 @@
+import { useMemo } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { OptimizationSuggestion, Profile } from '@/lib/types';
+import { Holiday, OptimizationSuggestion, Profile, Vacation } from '@/lib/types';
+import { DEFAULT_WEEKEND, eachDate, formatLongDay, isoDate, todayISO } from '@/lib/utils/date';
 
 interface YearCalendarProps {
   year: number;
@@ -11,24 +13,47 @@ interface YearCalendarProps {
   onDateClick: (date: string) => void;
   showSuggestionsOverlay: boolean;
   remainingPto: number;
+  weekendDays?: number[];
 }
 
-const MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+/** Monday-first week. */
+const WEEKDAYS = [
+  { label: 'M', day: 1 },
+  { label: 'T', day: 2 },
+  { label: 'W', day: 3 },
+  { label: 'T', day: 4 },
+  { label: 'F', day: 5 },
+  { label: 'S', day: 6 },
+  { label: 'S', day: 0 },
 ];
 
-const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+const LEGEND: { label: string; className: string }[] = [
+  { label: 'National holiday', className: 'bg-rose-100 ring-1 ring-rose-300' },
+  { label: 'Regional / city', className: 'bg-emerald-100 ring-1 ring-emerald-300' },
+  { label: 'Custom', className: 'bg-sky-100 ring-1 ring-sky-300' },
+  { label: 'Weekend', className: 'bg-slate-100' },
+  { label: 'Suggested PTO', className: 'bg-amber-100 ring-1 ring-amber-300' },
+  { label: 'Trip', className: 'bg-brand-600' },
+];
+
+const HOLIDAY_STYLES: Record<string, string> = {
+  national: 'bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-200 hover:bg-rose-100 font-semibold',
+  regional: 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 hover:bg-emerald-100 font-semibold',
+  custom: 'bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-200 hover:bg-sky-100 font-semibold',
+};
+
+const indexByDate = <T,>(entries: T[], range: (entry: T) => [string, string], year: number) => {
+  const map = new Map<string, T>();
+  entries.forEach((entry) => {
+    const [start, end] = range(entry);
+    if (end < `${year}-01-01` || start > `${year}-12-31`) return;
+    eachDate(start, end).forEach((date) => {
+      if (!map.has(date)) map.set(date, entry);
+    });
+  });
+  return map;
+};
 
 export const YearCalendar = ({
   year,
@@ -40,132 +65,146 @@ export const YearCalendar = ({
   onDateClick,
   showSuggestionsOverlay,
   remainingPto,
+  weekendDays = DEFAULT_WEEKEND,
 }: YearCalendarProps) => {
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId);
-  const affordableSuggestions = activeProfile?.suggestions.filter((suggestion) => suggestion.costInPto <= remainingPto) ?? [];
-  const affordableActiveSuggestion = activeSuggestion && activeSuggestion.costInPto <= remainingPto ? activeSuggestion : null;
+  const today = todayISO();
+
+  const lookups = useMemo(() => {
+    const holidays = new Map<string, Holiday>((activeProfile?.holidays ?? []).map((h) => [h.date, h]));
+    const vacations = indexByDate<Vacation>(activeProfile?.vacations ?? [], (v) => [v.startDate, v.endDate], year);
+    const overlays = new Map<string, { color: string; name: string }[]>();
+    profiles
+      .filter((profile) => comparedProfileIds.includes(profile.id) && profile.id !== activeProfileId)
+      .forEach((profile) =>
+        indexByDate(profile.vacations, (v) => [v.startDate, v.endDate], year).forEach((_, date) => {
+          overlays.set(date, [...(overlays.get(date) ?? []), { color: profile.color, name: profile.name }]);
+        })
+      );
+    const suggested = new Set(
+      (activeProfile?.suggestions ?? []).filter((s) => s.costInPto <= remainingPto).flatMap((s) => s.ptoDates)
+    );
+    return { holidays, vacations, overlays, suggested };
+  }, [activeProfile, profiles, comparedProfileIds, activeProfileId, remainingPto, year]);
+
+  const preview = activeSuggestion
+    ? { pto: new Set(activeSuggestion.ptoDates), start: activeSuggestion.breakStart, end: activeSuggestion.breakEnd }
+    : null;
 
   const renderMonth = (monthIndex: number) => {
-    const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-    const firstDay = new Date(year, monthIndex, 1).getDay();
-    const offset = firstDay === 0 ? 6 : firstDay - 1;
+    const daysInMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+    const firstDay = new Date(Date.UTC(year, monthIndex, 1)).getUTCDay();
+    const offset = (firstDay + 6) % 7;
     const cells: ReactNode[] = [];
+    let monthHolidays = 0;
+    let monthTripDays = 0;
 
-    for (let i = 0; i < offset; i += 1) {
-      cells.push(<div key={`empty-${i}`} />);
-    }
+    for (let i = 0; i < offset; i += 1) cells.push(<div key={`empty-${i}`} aria-hidden />);
 
     for (let day = 1; day <= daysInMonth; day += 1) {
-      const dateStr = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      const dateObj = new Date(year, monthIndex, day);
-      const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
-      const holidayMeta = activeProfile?.holidays.find((holiday) => holiday.date === dateStr);
-      const isHoliday = Boolean(holidayMeta);
-      const isRegionalHoliday = holidayMeta?.scope === 'regional';
-      
-      const activeVacationObj = activeProfile?.vacations.find((vacation) => dateStr >= vacation.startDate && dateStr <= vacation.endDate);
-      const activeVacation = Boolean(activeVacationObj);
-
-      const overlayVacations = profiles
-        .filter((profile) => comparedProfileIds.includes(profile.id))
-        .flatMap((profile) =>
-          profile.vacations
-            .filter((vacation) => dateStr >= vacation.startDate && dateStr <= vacation.endDate)
-            .map((vacation) => profile.color)
-        );
-
-      const isSuggested = Boolean(
-        affordableActiveSuggestion &&
-          dateStr >= affordableActiveSuggestion.startDate &&
-          dateStr <= affordableActiveSuggestion.endDate
-      );
-      const overlaySuggested =
-        showSuggestionsOverlay &&
-        !activeVacation &&
-        affordableSuggestions.some((suggestion) => dateStr >= suggestion.startDate && dateStr <= suggestion.endDate);
-
+      const dateStr = isoDate(year, monthIndex, day);
+      const dow = (offset + day - 1) % 7;
+      const isWeekend = weekendDays.includes(WEEKDAYS[dow].day);
+      const holiday = lookups.holidays.get(dateStr);
+      const vacation = lookups.vacations.get(dateStr);
+      const overlays = lookups.overlays.get(dateStr) ?? [];
+      const isPreviewPto = preview?.pto.has(dateStr) ?? false;
+      const isInPreviewBreak = preview ? dateStr >= preview.start && dateStr <= preview.end : false;
+      const isOverlaySuggested = showSuggestionsOverlay && !vacation && lookups.suggested.has(dateStr);
+      const isToday = dateStr === today;
+      const isPast = dateStr < today;
       const isSelectionStart = selectionStart === dateStr;
 
-      let baseClasses = 'group rounded-xl border text-sm flex items-center justify-center relative focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 transition-all duration-200 shadow-sm';
-      let borderClass = 'border-slate-100';
-      let textClass = 'text-slate-700 font-medium';
-      let backgroundClass = 'bg-white/80 hover:bg-white hover:scale-105 hover:shadow-md hover:z-10';
-      const dynamicStyle: CSSProperties = {};
+      if (holiday) monthHolidays += 1;
+      if (vacation) monthTripDays += 1;
 
-      if (activeVacation && activeProfile) {
-        const category = activeProfile.categories.find(c => c.id === activeVacationObj.type);
-        backgroundClass = 'hover:scale-110 hover:shadow-lg hover:z-10';
-        textClass = 'text-white font-bold';
-        borderClass = 'border-transparent';
-        dynamicStyle.backgroundColor = category?.color || activeProfile.color;
-      } else if (isSuggested) {
-        backgroundClass = 'bg-brand-50 hover:bg-brand-100';
-        borderClass = 'border-brand-200';
-        textClass = 'text-brand-700 font-bold';
-      } else if (overlaySuggested) {
-        backgroundClass = 'bg-amber-50 hover:bg-amber-100';
-        borderClass = 'border-amber-100';
-        textClass = 'text-amber-700 font-medium';
-      } else if (isHoliday) {
-        if (isRegionalHoliday) {
-          backgroundClass = 'bg-emerald-50 hover:bg-emerald-100';
-          borderClass = 'border-emerald-200';
-          textClass = 'text-emerald-700 font-bold';
-        } else {
-          backgroundClass = 'bg-rose-50 hover:bg-rose-100';
-          borderClass = 'border-rose-200';
-          textClass = 'text-rose-600 font-bold';
-        }
+      let stateClass = 'text-slate-700 hover:bg-slate-100';
+      const style: CSSProperties = {};
+
+      if (vacation && activeProfile) {
+        const category = activeProfile.categories.find((c) => c.id === vacation.type);
+        stateClass = 'text-white font-semibold shadow-sm hover:brightness-110';
+        style.backgroundColor = category?.color || activeProfile.color;
+      } else if (isPreviewPto) {
+        stateClass = 'bg-brand-600 text-white font-semibold ring-2 ring-brand-300 ring-offset-1';
+      } else if (holiday) {
+        stateClass = HOLIDAY_STYLES[holiday.scope ?? 'national'];
+      } else if (isOverlaySuggested) {
+        stateClass = 'bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200 hover:bg-amber-100';
       } else if (isWeekend) {
-        backgroundClass = 'bg-slate-50 hover:bg-slate-100';
-        textClass = 'text-slate-400';
+        stateClass = 'bg-slate-100/70 text-slate-400 hover:bg-slate-200/70';
       }
 
-      const selectionRing = isSelectionStart ? 'ring-2 ring-slate-900 ring-offset-2 z-20 scale-110' : '';
+      const titleParts = [formatLongDay(dateStr)];
+      if (holiday) titleParts.push(holiday.name);
+      if (vacation) titleParts.push(vacation.note || 'Trip');
+      if (isOverlaySuggested) titleParts.push('Suggested PTO day');
+      overlays.forEach((o) => titleParts.push(`${o.name} is off`));
 
       cells.push(
         <button
           key={dateStr}
           type="button"
           onClick={() => onDateClick(dateStr)}
-          className={`${baseClasses} ${borderClass} ${textClass} ${backgroundClass} ${selectionRing} min-h-11`}
-          style={dynamicStyle}
+          title={titleParts.join(' · ')}
+          aria-label={titleParts.join(', ')}
           aria-pressed={isSelectionStart}
+          className={`relative flex aspect-square min-h-8 items-center justify-center rounded-lg text-xs tabular-nums transition sm:text-[0.8rem]
+            ${stateClass}
+            ${isInPreviewBreak && !isPreviewPto && !vacation ? 'outline outline-2 outline-brand-300 -outline-offset-2' : ''}
+            ${isToday ? 'ring-2 ring-slate-900 ring-offset-1' : ''}
+            ${isSelectionStart ? 'z-10 scale-110 ring-2 ring-brand-600 ring-offset-2' : ''}
+            ${isPast && !vacation ? 'opacity-50' : ''}`}
+          style={style}
         >
           {day}
-          {overlayVacations.length > 0 && !activeVacation && (
-            <div className="absolute bottom-1 left-1 right-1 flex gap-0.5">
-              {overlayVacations.slice(0, 3).map((color, index) => (
-                <span key={`${color}-${index}`} className="flex-1 h-1 rounded-full shadow-sm" style={{ backgroundColor: color }} aria-hidden />
+          {overlays.length > 0 && (
+            <span className="absolute inset-x-1 bottom-0.5 flex gap-0.5" aria-hidden>
+              {overlays.slice(0, 3).map((o, index) => (
+                <span key={`${o.color}-${index}`} className="h-1 flex-1 rounded-full ring-1 ring-white" style={{ backgroundColor: o.color }} />
               ))}
-            </div>
+            </span>
           )}
-          <span className="sr-only">{new Date(dateStr).toDateString()}</span>
         </button>
       );
     }
 
     return (
-      <section key={monthIndex} className="rounded-3xl border border-slate-100 bg-white p-4 space-y-2 shadow-sm" aria-label={MONTHS[monthIndex]}>
-        <header className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-slate-900">{MONTHS[monthIndex]}</h3>
-          <span className="text-xs text-slate-400">{year}</span>
+      <section key={monthIndex} className="card p-3 sm:p-4" aria-label={`${MONTHS[monthIndex]} ${year}`}>
+        <header className="mb-2 flex items-baseline justify-between">
+          <h3 className="text-sm font-bold text-slate-900">{MONTHS[monthIndex]}</h3>
+          <span className="flex gap-1.5 text-[0.65rem] font-semibold">
+            {monthHolidays > 0 && <span className="text-rose-500">{monthHolidays} hol.</span>}
+            {monthTripDays > 0 && <span className="text-brand-600">{monthTripDays}d trip</span>}
+          </span>
         </header>
-        <div className="grid grid-cols-7 gap-1 text-center text-[0.65rem] font-semibold uppercase tracking-widest text-slate-400">
-          {WEEKDAYS.map((weekday) => (
-            <span key={weekday}>{weekday}</span>
+        <div className="mb-1 grid grid-cols-7 gap-1 text-center text-[0.6rem] font-semibold uppercase text-slate-400">
+          {WEEKDAYS.map((weekday, index) => (
+            <span key={index} className={weekendDays.includes(weekday.day) ? 'text-slate-300' : ''}>
+              {weekday.label}
+            </span>
           ))}
         </div>
-        <div className="grid grid-cols-7 gap-1" role="grid">
-          {cells}
-        </div>
+        <div className="grid grid-cols-7 gap-1">{cells}</div>
       </section>
     );
   };
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-      {MONTHS.map((_, monthIndex) => renderMonth(monthIndex))}
+    <div className="space-y-3">
+      <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-[0.7rem] text-slate-500" aria-label="Legend">
+        {LEGEND.map((item) => (
+          <li key={item.label} className="flex items-center gap-1.5">
+            <span className={`h-3 w-3 rounded ${item.className}`} aria-hidden />
+            {item.label}
+          </li>
+        ))}
+        <li className="flex items-center gap-1.5">
+          <span className="h-3 w-3 rounded ring-2 ring-slate-900" aria-hidden />
+          Today
+        </li>
+      </ul>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{MONTHS.map((_, monthIndex) => renderMonth(monthIndex))}</div>
     </div>
   );
 };

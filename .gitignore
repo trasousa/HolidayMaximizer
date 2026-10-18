@@ -141,3 +141,5 @@ data/*.sqlite-journal
 
 # Custom
 .gemini/
+# Wrangler
+.wrangler/

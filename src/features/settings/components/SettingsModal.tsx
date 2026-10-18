@@ -1,7 +1,9 @@
-import { useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { ChangeEvent, ReactNode } from 'react';
 import { UserSettings } from '@/lib/types';
 import { storage } from '@/lib/storage';
-import { Loader2, Save, X, Download, Upload, Database } from 'lucide-react';
+import { clearApiCache } from '@/lib/services/cache';
+import { Database, Download, HardDrive, Loader2, Save, SlidersHorizontal, Upload, X } from 'lucide-react';
 
 interface SettingsModalProps {
   settings: UserSettings;
@@ -12,7 +14,13 @@ interface SettingsModalProps {
 
 export const SettingsModal = ({ settings, onClose, onSave, isSaving }: SettingsModalProps) => {
   const [draft, setDraft] = useState<UserSettings>(settings);
+  const [persisted, setPersisted] = useState<boolean | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    navigator.storage?.persisted?.().then(setPersisted).catch(() => setPersisted(null));
+  }, []);
 
   const handleSave = async () => {
     await onSave(draft);
@@ -29,142 +37,156 @@ export const SettingsModal = ({ settings, onClose, onSave, isSaving }: SettingsM
       a.download = `holiday-maximizer-backup-${new Date().toISOString().split('T')[0]}.json`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (error: any) {
-      alert(error.message);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Export failed');
     }
   };
 
-  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImport = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
+    if (!window.confirm('Importing replaces all profiles and trips stored in this browser. Continue?')) return;
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
-        const json = e.target?.result as string;
-        await storage.importData(json);
-        alert('Data imported successfully. The page will now reload.');
+        await storage.importData(e.target?.result as string);
         window.location.reload();
-      } catch (error: any) {
-        alert('Failed to import data: ' + error.message);
+      } catch (error) {
+        setMessage(`Import failed: ${error instanceof Error ? error.message : 'invalid file'}`);
       }
     };
     reader.readAsText(file);
   };
 
+  const handleClearCache = async () => {
+    await clearApiCache();
+    setMessage('Holiday cache cleared – fresh data will be downloaded.');
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="glass-panel w-full max-w-lg p-6 space-y-6">
-        <header className="flex items-center justify-between">
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal max-w-lg space-y-6" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <header className="flex items-start justify-between">
           <div>
-            <p className="text-xs uppercase tracking-widest text-slate-400 font-bold">Preferences</p>
-            <h2 className="text-2xl font-bold text-slate-900">App Settings</h2>
+            <p className="eyebrow">Preferences</p>
+            <h2 className="text-xl font-bold text-slate-900">Settings</h2>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition p-1 hover:bg-slate-100 rounded-lg" aria-label="Close">
-            <X size={20} />
+          <button onClick={onClose} className="icon-btn" aria-label="Close">
+            <X size={18} />
           </button>
         </header>
 
-        <div className="space-y-6">
-          <section className="space-y-4">
-            <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
-              <Settings2 size={14} /> Optimization Rules
-            </h3>
-            <div className="space-y-4 bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
-              <SliderField
-                label="Min PTO days"
-                value={draft.minPtoDays}
-                min={1}
-                max={10}
-                step={1}
-                onChange={(value) => setDraft((prev) => ({ ...prev, minPtoDays: value, maxPtoDays: Math.max(prev.maxPtoDays, value) }))}
-              />
-              <SliderField
-                label="Max PTO days"
-                value={draft.maxPtoDays}
-                min={draft.minPtoDays}
-                max={20}
-                step={1}
-                onChange={(value) => setDraft((prev) => ({ ...prev, maxPtoDays: value }))}
-              />
-              <SliderField
-                label="Min efficiency"
-                value={draft.minEfficiency}
-                min={1}
-                max={4}
-                step={0.1}
-                onChange={(value) => setDraft((prev) => ({ ...prev, minEfficiency: Number(value.toFixed(1)) }))}
-              />
-            </div>
-          </section>
+        <Section icon={<SlidersHorizontal size={14} />} title="Bridge rules">
+          <div className="space-y-4 rounded-xl bg-slate-50 p-4">
+            <SliderField
+              label="Min PTO days per break"
+              value={draft.minPtoDays}
+              min={1}
+              max={10}
+              step={1}
+              onChange={(value) => setDraft((prev) => ({ ...prev, minPtoDays: value, maxPtoDays: Math.max(prev.maxPtoDays, value) }))}
+            />
+            <SliderField
+              label="Max PTO days per break"
+              value={draft.maxPtoDays}
+              min={1}
+              max={20}
+              step={1}
+              onChange={(value) => setDraft((prev) => ({ ...prev, maxPtoDays: value, minPtoDays: Math.min(prev.minPtoDays, value) }))}
+            />
+            <SliderField
+              label="Min multiplier (days off ÷ PTO days)"
+              value={draft.minEfficiency}
+              display={`${draft.minEfficiency.toFixed(1)}×`}
+              min={1}
+              max={4}
+              step={0.1}
+              onChange={(value) => setDraft((prev) => ({ ...prev, minEfficiency: Number(value.toFixed(1)) }))}
+            />
+            <Toggle
+              label="Must include a public holiday"
+              description="Off: also suggest plain long weekends."
+              checked={draft.requireHoliday ?? true}
+              onChange={(requireHoliday) => setDraft((prev) => ({ ...prev, requireHoliday }))}
+            />
+            <Toggle
+              label="Hide breaks in the past"
+              description="Only suggest from today onwards in the current year."
+              checked={draft.hidePastSuggestions ?? true}
+              onChange={(hidePastSuggestions) => setDraft((prev) => ({ ...prev, hidePastSuggestions }))}
+            />
+          </div>
+        </Section>
 
-          <section className="space-y-4">
-            <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
-              <Database size={14} /> Data Management
-            </h3>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={handleExport}
-                className="flex items-center justify-center gap-2 rounded-xl border-2 border-slate-100 bg-white px-4 py-3 text-xs font-bold text-slate-600 hover:border-slate-200 hover:bg-slate-50 transition"
-              >
-                <Download size={16} /> Export JSON
-              </button>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center justify-center gap-2 rounded-xl border-2 border-slate-100 bg-white px-4 py-3 text-xs font-bold text-slate-600 hover:border-slate-200 hover:bg-slate-50 transition"
-              >
-                <Upload size={16} /> Import JSON
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json"
-                onChange={handleImport}
-                className="hidden"
-              />
-            </div>
-          </section>
-        </div>
+        <Section icon={<Database size={14} />} title="Your data">
+          <p className="flex items-start gap-2 text-xs text-slate-500">
+            <HardDrive size={14} className="mt-0.5 shrink-0" />
+            <span>
+              Everything is saved in this browser only – nothing is sent to a server.{' '}
+              {persisted === true && <strong className="text-emerald-700">Persistent storage is on.</strong>}
+              {persisted === false && <strong className="text-amber-700">The browser may clear it under storage pressure – keep a backup.</strong>}
+            </span>
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={handleExport} className="btn-secondary">
+              <Download size={16} /> Backup
+            </button>
+            <button onClick={() => fileInputRef.current?.click()} className="btn-secondary">
+              <Upload size={16} /> Restore
+            </button>
+            <input ref={fileInputRef} type="file" accept=".json,application/json" onChange={handleImport} className="hidden" />
+          </div>
+          <button onClick={handleClearCache} className="btn-ghost w-full text-xs">
+            Clear cached holiday data
+          </button>
+          {message && <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">{message}</p>}
+        </Section>
 
-        <button
-          onClick={handleSave}
-          disabled={isSaving}
-          className="w-full rounded-2xl bg-slate-900 text-white py-4 font-bold flex items-center justify-center gap-2 disabled:opacity-40 hover:bg-slate-800 transition shadow-lg shadow-slate-900/10"
-        >
-          {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-          SAVE & RECALCULATE
+        <button onClick={handleSave} disabled={isSaving} className="btn-primary w-full py-3">
+          {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+          Save & recalculate
         </button>
       </div>
     </div>
   );
 };
 
-import { Settings as Settings2 } from 'lucide-react';
+const Section = ({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) => (
+  <section className="space-y-3">
+    <h3 className="eyebrow flex items-center gap-2">
+      {icon} {title}
+    </h3>
+    {children}
+  </section>
+);
 
 interface SliderFieldProps {
   label: string;
   value: number;
+  display?: string;
   min: number;
   max: number;
   step: number;
   onChange: (value: number) => void;
 }
 
-const SliderField = ({ label, value, min, max, step, onChange }: SliderFieldProps) => (
-  <label className="space-y-2 block text-sm font-medium text-slate-600">
-    <div className="flex items-center justify-between">
+const SliderField = ({ label, value, display, min, max, step, onChange }: SliderFieldProps) => (
+  <label className="block space-y-1.5 text-sm text-slate-600">
+    <span className="flex items-center justify-between">
       <span>{label}</span>
-      <span className="text-slate-900 font-semibold">{value}</span>
-    </div>
-    <input
-      type="range"
-      min={min}
-      max={max}
-      step={step}
-      value={value}
-      onChange={(event) => onChange(Number(event.target.value))}
-      className="w-full accent-brand-500"
-    />
+      <span className="font-semibold tabular-nums text-slate-900">{display ?? value}</span>
+    </span>
+    <input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} className="w-full accent-brand-600" />
+  </label>
+);
+
+const Toggle = ({ label, description, checked, onChange }: { label: string; description: string; checked: boolean; onChange: (value: boolean) => void }) => (
+  <label className="flex cursor-pointer items-start justify-between gap-3 text-sm">
+    <span>
+      <span className="block font-medium text-slate-700">{label}</span>
+      <span className="text-xs text-slate-500">{description}</span>
+    </span>
+    <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-1 h-4 w-4 rounded accent-brand-600" />
   </label>
 );
 

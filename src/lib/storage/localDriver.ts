@@ -1,39 +1,54 @@
 import { nanoid } from 'nanoid';
+import type { UpdateSpec } from 'dexie';
 import { db } from './indexedDb';
 import { StorageDriver } from './types';
+import { DEFAULT_SETTINGS } from '../constants';
 import { Profile, Vacation, UserSettings, SaveProfilePayload, SaveVacationPayload } from '../types';
+
+const BACKUP_VERSION = 2;
+
+const withDefaults = (settings: Partial<UserSettings>): UserSettings => ({
+  year: new Date().getFullYear(),
+  ...DEFAULT_SETTINGS,
+  ...settings,
+});
+
+const byStartDate = (a: Vacation, b: Vacation) => a.startDate.localeCompare(b.startDate);
 
 export class LocalDriver implements StorageDriver {
   async getProfiles(): Promise<Profile[]> {
-    const profiles = await db.profiles.toArray();
-    const vacations = await db.vacations.toArray();
-    
-    return profiles.map(p => ({
-      ...p,
-      vacations: vacations.filter(v => v.profileId === p.id),
-      holidays: [],
-      suggestions: []
-    }));
+    const [profiles, vacations] = await Promise.all([db.profiles.toArray(), db.vacations.toArray()]);
+
+    return profiles
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((p) => ({
+        ...p,
+        vacations: vacations.filter((v) => v.profileId === p.id).sort(byStartDate),
+        holidays: [],
+        suggestions: [],
+      }));
   }
 
   async createProfile(payload: SaveProfilePayload): Promise<Profile> {
     const profile: Profile = {
+      categories: [],
+      customHolidays: [],
       ...payload,
       id: nanoid(),
       vacations: [],
       holidays: [],
-      suggestions: []
-    } as Profile;
+      suggestions: [],
+    };
     await db.profiles.add(profile);
     return profile;
   }
 
   async updateProfile(id: string, payload: SaveProfilePayload): Promise<Profile> {
-    await db.profiles.update(id, payload);
+    await db.profiles.update(id, payload as UpdateSpec<Profile>);
     const updated = await db.profiles.get(id);
     if (!updated) throw new Error('Profile not found');
     const vacations = await db.vacations.where('profileId').equals(id).toArray();
-    return { ...updated, vacations, holidays: [], suggestions: [] };
+    return { ...updated, vacations: vacations.sort(byStartDate), holidays: [], suggestions: [] };
   }
 
   async deleteProfile(id: string): Promise<void> {
@@ -66,17 +81,13 @@ export class LocalDriver implements StorageDriver {
   async getSettings(): Promise<UserSettings> {
     const settings = await db.settings.get(1);
     if (!settings) {
-      const defaults: UserSettings = {
-        year: new Date().getFullYear(),
-        minPtoDays: 1,
-        maxPtoDays: 5,
-        minEfficiency: 1.5
-      };
-      await db.settings.add({ ...defaults, id: 1 });
+      const defaults = withDefaults({});
+      // `put` (not `add`) so two concurrent first loads cannot collide on the key.
+      await db.settings.put({ ...defaults, id: 1 });
       return defaults;
     }
     const { id: _, ...rest } = settings;
-    return rest;
+    return withDefaults(rest);
   }
 
   async updateSettings(payload: UserSettings): Promise<UserSettings> {
@@ -85,22 +96,31 @@ export class LocalDriver implements StorageDriver {
   }
 
   async exportData(): Promise<string> {
-    const profiles = await db.profiles.toArray();
-    const vacations = await db.vacations.toArray();
-    const settings = await db.settings.get(1);
-    return JSON.stringify({ profiles, vacations, settings, version: 1, timestamp: new Date().toISOString() });
+    const [profiles, vacations, settings] = await Promise.all([
+      db.profiles.toArray(),
+      db.vacations.toArray(),
+      db.settings.get(1),
+    ]);
+    return JSON.stringify(
+      { app: 'holiday-maximizer', version: BACKUP_VERSION, timestamp: new Date().toISOString(), profiles, vacations, settings },
+      null,
+      2
+    );
   }
 
   async importData(json: string): Promise<void> {
     const data = JSON.parse(json);
+    if (!data || !Array.isArray(data.profiles) || !Array.isArray(data.vacations)) {
+      throw new Error('This file is not a Holiday Maximizer backup.');
+    }
     await db.transaction('rw', db.profiles, db.vacations, db.settings, async () => {
       await db.profiles.clear();
       await db.vacations.clear();
       await db.settings.clear();
-      
-      if (data.profiles) await db.profiles.bulkAdd(data.profiles);
-      if (data.vacations) await db.vacations.bulkAdd(data.vacations);
-      if (data.settings) await db.settings.put(data.settings);
+
+      await db.profiles.bulkPut(data.profiles);
+      await db.vacations.bulkPut(data.vacations);
+      if (data.settings) await db.settings.put({ ...data.settings, id: 1 });
     });
   }
 }

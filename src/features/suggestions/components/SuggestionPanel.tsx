@@ -1,137 +1,173 @@
-import { useState } from 'react';
-import { OptimizationSuggestion, Vacation } from '@/lib/types';
-import { Eye, EyeOff, Loader2, RefreshCcw, Sparkles, Check, Settings2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { OptimizationSuggestion, UserSettings, Vacation } from '@/lib/types';
+import { Check, Loader2, Plus, SlidersHorizontal, Sparkles, X } from 'lucide-react';
+import { formatShortRange } from '@/lib/utils/date';
 
 interface SuggestionPanelProps {
   suggestions: OptimizationSuggestion[];
   activeSuggestionId?: string;
-  onPreview: (suggestion: OptimizationSuggestion) => void;
-  onApply: (suggestion: OptimizationSuggestion) => Promise<Vacation | void>;
-  onPlan: (vacation: Vacation) => void;
-  onAnalyze: () => void;
-  isAnalyzing: boolean;
+  onPreview: (suggestion: OptimizationSuggestion | null) => void;
+  onApply: (suggestion: OptimizationSuggestion) => Promise<void>;
+  lastApplied: Vacation | null;
+  onEditApplied: (vacation: Vacation) => void;
+  onDismissApplied: () => void;
+  onOpenSettings: () => void;
+  isLoading: boolean;
   remainingPto: number;
+  settings: UserSettings;
 }
+
+type SortMode = 'value' | 'date';
 
 export const SuggestionPanel = ({
   suggestions,
   activeSuggestionId,
   onPreview,
   onApply,
-  onPlan,
-  onAnalyze,
-  isAnalyzing,
+  lastApplied,
+  onEditApplied,
+  onDismissApplied,
+  onOpenSettings,
+  isLoading,
   remainingPto,
+  settings,
 }: SuggestionPanelProps) => {
-  const [appliedTrips, setAppliedTrips] = useState<Record<string, Vacation>>({});
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [sort, setSort] = useState<SortMode>('value');
 
-  const handleCardClick = async (suggestion: OptimizationSuggestion) => {
-    if (suggestion.costInPto > remainingPto || appliedTrips[suggestion.id] || loadingId) return;
-    
+  const sorted = useMemo(
+    () => (sort === 'date' ? [...suggestions].sort((a, b) => a.breakStart.localeCompare(b.breakStart)) : suggestions),
+    [suggestions, sort]
+  );
+  const bestId = suggestions[0]?.id;
+
+  const handleApply = async (suggestion: OptimizationSuggestion) => {
+    if (suggestion.costInPto > remainingPto || loadingId) return;
     setLoadingId(suggestion.id);
-    const result = await onApply(suggestion);
-    if (result) {
-      setAppliedTrips(prev => ({ ...prev, [suggestion.id]: result }));
+    try {
+      await onApply(suggestion);
+    } finally {
+      setLoadingId(null);
     }
-    setLoadingId(null);
   };
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[0.65rem] uppercase tracking-[0.2em] font-bold text-slate-400">Optimization</p>
-          <p className="text-xl font-bold text-slate-900">{suggestions.length} Bridges found</p>
+          <p className="eyebrow">Smart bridges</p>
+          <p className="text-lg font-bold text-slate-900">
+            {isLoading ? 'Finding bridges…' : `${suggestions.length} ${suggestions.length === 1 ? 'opportunity' : 'opportunities'}`}
+          </p>
+          <p className="text-xs text-slate-500">
+            {settings.minPtoDays}–{settings.maxPtoDays} PTO days · at least {settings.minEfficiency}× · {remainingPto} days left
+          </p>
         </div>
-        <button
-          onClick={onAnalyze}
-          disabled={isAnalyzing}
-          className="inline-flex items-center gap-2 rounded-xl bg-brand-50 border border-brand-100 px-4 py-2 text-xs font-bold text-brand-700 hover:bg-brand-100 disabled:opacity-40 transition shadow-sm"
-        >
-          {isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCcw size={14} />}
-          RE-ANALYZE
+        <button onClick={onOpenSettings} className="icon-btn" aria-label="Optimization rules" title="Optimization rules">
+          <SlidersHorizontal size={16} />
         </button>
       </div>
-      {suggestions.length === 0 && !isAnalyzing && (
-        <div className="text-center py-12 rounded-3xl border border-dashed border-slate-200 bg-slate-50/50 text-slate-500 text-sm">
-          <Sparkles className="mx-auto mb-3 text-brand-400" size={24} />
-          <p className="font-semibold">Generate smarter breaks</p>
-          <p className="text-xs text-slate-400 mt-1">Tap Analyze to find the best PTO bridges.</p>
+
+      {lastApplied && (
+        <div className="flex items-center gap-3 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800 ring-1 ring-emerald-200">
+          <Check size={16} className="shrink-0" />
+          <p className="flex-1">
+            Booked <strong>{formatShortRange(lastApplied.startDate, lastApplied.endDate)}</strong>.{' '}
+            <button className="font-semibold underline underline-offset-2" onClick={() => onEditApplied(lastApplied)}>
+              Add details
+            </button>
+          </p>
+          <button onClick={onDismissApplied} className="text-emerald-600 hover:text-emerald-900" aria-label="Dismiss">
+            <X size={14} />
+          </button>
         </div>
       )}
-      <div className="space-y-4">
-        {suggestions.map((suggestion, index) => {
+
+      {suggestions.length > 1 && (
+        <div className="segmented" role="tablist" aria-label="Sort suggestions">
+          <button role="tab" aria-selected={sort === 'value'} onClick={() => setSort('value')}>
+            Best value
+          </button>
+          <button role="tab" aria-selected={sort === 'date'} onClick={() => setSort('date')}>
+            By date
+          </button>
+        </div>
+      )}
+
+      {isLoading && (
+        <div className="flex justify-center py-10">
+          <Loader2 className="animate-spin text-brand-500" />
+        </div>
+      )}
+
+      {!isLoading && suggestions.length === 0 && (
+        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-8 text-center text-sm text-slate-500">
+          <Sparkles className="mx-auto mb-2 text-brand-400" size={22} />
+          <p className="font-semibold text-slate-700">No bridges match your rules</p>
+          <p className="mt-1 text-xs">Try a lower minimum multiplier or more PTO days per break.</p>
+          <button onClick={onOpenSettings} className="btn-secondary mt-3 text-xs">
+            Adjust rules
+          </button>
+        </div>
+      )}
+
+      <ul className="space-y-2.5">
+        {sorted.map((suggestion) => {
           const isActive = suggestion.id === activeSuggestionId;
           const isAffordable = suggestion.costInPto <= remainingPto;
-          const appliedVacation = appliedTrips[suggestion.id];
-          const isLoading = loadingId === suggestion.id;
-
-          const accents = [
-            'from-brand-500/10 via-brand-400/5 to-white border-brand-100',
-            'from-emerald-500/10 via-emerald-400/5 to-white border-emerald-100',
-            'from-sky-500/10 via-sky-400/5 to-white border-sky-100',
-            'from-amber-500/10 via-amber-400/5 to-white border-amber-100',
-          ];
-          const accentClass = accents[index % accents.length];
+          const isApplying = loadingId === suggestion.id;
 
           return (
-            <div
+            <li
               key={suggestion.id}
-              onMouseEnter={() => isAffordable && !isActive && !appliedVacation && onPreview(suggestion)}
-              onMouseLeave={() => isAffordable && isActive && !appliedVacation && onPreview(suggestion)}
-              onClick={() => handleCardClick(suggestion)}
-              className={`group relative rounded-2xl border p-4 transition-all duration-300 ${
-                isActive
-                  ? 'border-brand-500 bg-white ring-4 ring-brand-500/10 shadow-xl z-10 scale-[1.02]'
-                  : appliedVacation 
-                    ? 'border-emerald-500 bg-emerald-50/30'
-                    : `bg-gradient-to-br ${accentClass} hover:shadow-lg hover:border-slate-300`
-              } ${isAffordable && !appliedVacation ? 'cursor-pointer' : 'cursor-default'} ${!isAffordable ? 'opacity-60 grayscale-[0.5]' : ''}`}
+              onMouseEnter={() => isAffordable && onPreview(suggestion)}
+              onMouseLeave={() => isActive && onPreview(null)}
+              className={`group rounded-xl p-3.5 ring-1 transition ${
+                isActive ? 'bg-brand-50/70 ring-2 ring-brand-500' : 'bg-white ring-slate-200 hover:ring-slate-300'
+              } ${!isAffordable ? 'opacity-60' : ''}`}
             >
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex-1">
-                  <p className="text-[0.6rem] font-bold text-slate-400 uppercase tracking-widest mb-1">{suggestion.description}</p>
-                  <p className="text-lg font-bold text-slate-900 leading-tight group-hover:text-brand-600 transition-colors">
-                    {suggestion.title}
-                  </p>
+              <button
+                type="button"
+                className="block w-full text-left"
+                onClick={() => isAffordable && onPreview(isActive ? null : suggestion)}
+                aria-pressed={isActive}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-bold text-slate-900">{suggestion.title}</p>
+                      {suggestion.id === bestId && <span className="chip bg-amber-100 text-amber-800">Best</span>}
+                    </div>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Take {formatShortRange(suggestion.startDate, suggestion.endDate)} off
+                      {suggestion.holidayDates.length > 0 && ` · ${suggestion.holidayDates.length} holiday${suggestion.holidayDates.length > 1 ? 's' : ''}`}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-2xl font-extrabold leading-none tabular-nums text-slate-900">{suggestion.totalDaysOff}</p>
+                    <p className="text-[0.65rem] font-medium text-slate-400">days off</p>
+                  </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <p className="text-[0.55rem] font-bold text-slate-400 uppercase tracking-tighter">Total days off</p>
-                  <p className="text-3xl font-black text-slate-900">{suggestion.totalDaysOff}</p>
-                </div>
-              </div>
+              </button>
 
-              <div className="mt-4 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className={`px-2 py-1 rounded-lg text-[0.65rem] font-black uppercase tracking-wider ${appliedVacation ? 'bg-emerald-500 text-white' : 'bg-slate-900 text-white'}`}>
-                    {suggestion.costInPto} PTO DAYS
-                  </span>
-                  {appliedVacation && (
-                    <span className="flex items-center gap-1 text-[0.65rem] font-bold text-emerald-600">
-                      <Check size={12} strokeWidth={3} /> APPLIED
-                    </span>
-                  )}
-                  {isLoading && <Loader2 size={12} className="animate-spin text-slate-400" />}
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="chip bg-slate-900 text-white">{suggestion.costInPto} PTO</span>
+                  <span className="chip bg-amber-50 text-amber-700 ring-1 ring-amber-200">{suggestion.efficiency.toFixed(1)}×</span>
                 </div>
-                {!isAffordable && <span className="text-[0.65rem] text-rose-600 font-bold bg-rose-50 px-2 py-1 rounded-lg">-{suggestion.costInPto - remainingPto} PTO needed</span>}
-              </div>
-
-              {appliedVacation && (
-                <div className="mt-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onPlan(appliedVacation); }}
-                    className="w-full flex items-center justify-center gap-2 rounded-lg bg-white border-2 border-emerald-100 py-2 text-[0.7rem] font-black text-emerald-700 hover:bg-emerald-50 hover:border-emerald-200 transition uppercase tracking-wider shadow-sm"
-                  >
-                    <Settings2 size={14} />
-                    Plan trip details
+                {isAffordable ? (
+                  <button onClick={() => handleApply(suggestion)} disabled={Boolean(loadingId)} className="btn-brand px-3 py-1.5 text-xs">
+                    {isApplying ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                    Book
                   </button>
-                </div>
-              )}
-            </div>
+                ) : (
+                  <span className="text-xs font-semibold text-rose-600">Needs {suggestion.costInPto - remainingPto} more PTO</span>
+                )}
+              </div>
+            </li>
           );
         })}
-      </div>
+      </ul>
     </div>
   );
 };

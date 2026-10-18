@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { usePlannerUI } from '@/features/planner/context/PlannerContext';
 import {
   useCreateProfileMutation,
@@ -6,54 +6,25 @@ import {
   useUpdateProfileMutation,
   useUpdateSettingsMutation,
 } from '@/features/profiles/hooks/useProfiles';
-import { Profile, UserSettings } from '@/lib/types';
-import { fetchSupportedCountries, fetchCountryRegions } from '@/lib/services/locationService';
-import { Check, Plus, Wand2, Pencil, Trash2 } from 'lucide-react';
-
-const swatches = ['#1d4ed8', '#0ea5e9', '#14b8a6', '#e11d48', '#9333ea', '#f97316'];
+import { ProfileForm } from '@/features/profiles/components/ProfileForm';
+import { Profile, SaveProfilePayload, UserSettings } from '@/lib/types';
+import { ArrowRight, CalendarRange, Check, ChevronLeft, ChevronRight, Lock, MapPin, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 
 interface LandingPageProps {
   profiles: Profile[];
   settings: UserSettings;
 }
 
-interface FormState {
-  id?: string;
-  name: string;
-  country: string;
-  city: string;
-  color: string;
-  allowance: number;
-  isoCountryCode?: string;
-  isoRegionCode?: string;
-}
-
-const emptyForm = (): FormState => ({
-  name: '',
-  country: '',
-  city: '',
-  color: swatches[0],
-  allowance: 30,
-  isoCountryCode: undefined,
-  isoRegionCode: undefined,
-});
+const FEATURES = [
+  { icon: Sparkles, title: 'Smart bridges', text: 'Finds the working days that join weekends and holidays into long breaks.' },
+  { icon: MapPin, title: 'National, regional & city', text: 'Up-to-date public holidays down to municipality level, plus your own.' },
+  { icon: Lock, title: 'Private by design', text: 'Your plan stays in this browser and is there when you come back.' },
+];
 
 export const LandingPage = ({ profiles, settings }: LandingPageProps) => {
-  const {
-    selectedProfileIds,
-    setSelectedProfileIds,
-    setActiveProfileId,
-    setViewMode,
-    setComparedProfileIds,
-  } = usePlannerUI();
+  const { selectedProfileIds, setSelectedProfileIds, setActiveProfileId, setViewMode, setComparedProfileIds, activeProfileId } = usePlannerUI();
 
-  const [formState, setFormState] = useState<FormState>(emptyForm());
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [countries, setCountries] = useState<{ key: string; value: string }[]>([]);
-  const [search, setSearch] = useState('');
-  const [regions, setRegions] = useState<{ key: string; value: string }[]>([]);
-  const [regionSearch, setRegionSearch] = useState('');
-  const [isLoadingRegions, setIsLoadingRegions] = useState(false);
+  const [editing, setEditing] = useState<Profile | 'new' | null>(null);
   const [year, setYear] = useState(settings.year);
 
   const createProfile = useCreateProfileMutation();
@@ -61,390 +32,166 @@ export const LandingPage = ({ profiles, settings }: LandingPageProps) => {
   const deleteProfile = useDeleteProfileMutation();
   const updateSettings = useUpdateSettingsMutation();
 
+  useEffect(() => setYear(settings.year), [settings.year]);
+
+  // First visit: select the only profile automatically.
   useEffect(() => {
-    fetchSupportedCountries().then(setCountries).catch(() => setCountries([]));
-  }, []);
+    if (profiles.length === 1 && selectedProfileIds.length === 0) setSelectedProfileIds([profiles[0].id]);
+  }, [profiles, selectedProfileIds.length, setSelectedProfileIds]);
 
-  useEffect(() => {
-    if (!formState.isoCountryCode) {
-      setRegions([]);
-      setFormState((prev) => ({ ...prev, isoRegionCode: undefined }));
-      return;
-    }
-    setIsLoadingRegions(true);
-    fetchCountryRegions(formState.isoCountryCode)
-      .then((list) => {
-        setRegions(list);
-        if (list.length === 0) {
-          setFormState((prev) => ({ ...prev, isoRegionCode: undefined }));
-          return;
-        }
-        setFormState((prev) => {
-          if (!prev.isoRegionCode) {
-            return prev;
-          }
-          const stillValid = list.some((region) => region.key === prev.isoRegionCode);
-          if (stillValid) {
-            return prev;
-          }
-          return { ...prev, isoRegionCode: undefined, city: '' };
-        });
-      })
-      .finally(() => setIsLoadingRegions(false));
-  }, [formState.isoCountryCode]);
-
-  useEffect(() => {
-    setSelectedProfileIds((prev) => prev.filter((id) => profiles.some((profile) => profile.id === id)));
-  }, [profiles, setSelectedProfileIds]);
-
-  useEffect(() => {
-    setYear(settings.year);
-  }, [settings.year]);
-
-  const filteredCountries = useMemo(() => {
-    if (!search) return countries.slice(0, 10);
-    return countries.filter((country) => country.value.toLowerCase().includes(search.toLowerCase())).slice(0, 10);
-  }, [countries, search]);
-
-  const filteredRegions = useMemo(() => {
-    if (!regionSearch) return regions.slice(0, 10);
-    return regions.filter((region) => region.value.toLowerCase().includes(regionSearch.toLowerCase())).slice(0, 10);
-  }, [regions, regionSearch]);
-
-  const handleCardToggle = (id: string) => {
+  const handleCardToggle = (id: string) =>
     setSelectedProfileIds((prev) => (prev.includes(id) ? prev.filter((pid) => pid !== id) : [...prev, id]));
-  };
 
-  const handleEdit = (profile: Profile) => {
-    setIsFormOpen(true);
-    setFormState({
-      id: profile.id,
-      name: profile.name,
-      country: profile.country,
-      city: profile.city,
-      color: profile.color,
-      allowance: profile.totalAllowance,
-      isoCountryCode: profile.isoCountryCode,
-      isoRegionCode: profile.isoRegionCode,
-    });
-    setRegionSearch('');
-  };
-
-  const resetForm = () => {
-    setFormState(emptyForm());
-    setIsFormOpen(false);
-    setSearch('');
-    setRegionSearch('');
-  };
-
-  const handleSave = async () => {
-    const regionRequired = regions.length > 0;
-    if (!formState.name || !formState.country || !formState.isoCountryCode) return;
-    if (!formState.city) return;
-    if (regionRequired && !formState.isoRegionCode) return;
-    const payload = {
-      name: formState.name.trim(),
-      avatar: formState.name.substring(0, 2).toUpperCase(),
-      color: formState.color,
-      country: formState.country.trim(),
-      city: formState.city.trim(),
-      isoCountryCode: formState.isoCountryCode,
-      isoRegionCode: formState.isoRegionCode,
-      totalAllowance: formState.allowance,
-    };
-    if (formState.id) {
-      await updateProfile.mutateAsync({ id: formState.id, payload });
+  const handleSave = async (payload: SaveProfilePayload) => {
+    if (editing && editing !== 'new') {
+      await updateProfile.mutateAsync({ id: editing.id, payload });
     } else {
       const created = await createProfile.mutateAsync(payload);
-      if (created?.id) {
-        setSelectedProfileIds((prev) => (prev.includes(created.id) ? prev : [...prev, created.id]));
-      }
+      setSelectedProfileIds((prev) => (prev.includes(created.id) ? prev : [...prev, created.id]));
     }
-    resetForm();
+    setEditing(null);
+  };
+
+  const handleDelete = (profile: Profile) => {
+    if (!window.confirm(`Delete ${profile.name} and all of their trips? This cannot be undone.`)) return;
+    deleteProfile.mutate(profile.id);
   };
 
   const handleStartPlanning = async () => {
     if (year !== settings.year) {
       await updateSettings.mutateAsync({ ...settings, year });
     }
-    const [primary, ...rest] = selectedProfileIds;
+    const primary = selectedProfileIds.includes(activeProfileId ?? '') ? activeProfileId! : selectedProfileIds[0];
     setActiveProfileId(primary ?? null);
-    setComparedProfileIds(rest ?? []);
+    setComparedProfileIds(selectedProfileIds.filter((id) => id !== primary));
     setViewMode('planner');
   };
 
-  const isSaving = createProfile.isPending || updateProfile.isPending;
-  const regionRequired = regions.length > 0;
-  const canSave =
-    formState.name.trim().length > 0 &&
-    formState.country.trim().length > 0 &&
-    Boolean(formState.isoCountryCode) &&
-    formState.city.trim().length > 0 &&
-    (!regionRequired || Boolean(formState.isoRegionCode));
-
   return (
-    <div className="max-w-6xl mx-auto px-4 py-12 space-y-10">
-      <div className="text-center space-y-4">
-        <p className="text-brand-600 font-semibold uppercase tracking-widest text-xs">Holiday Maximizer</p>
-        <h1 className="text-4xl md:text-5xl font-semibold text-slate-900 leading-tight">
-          Plan PTO that feels intentional, not improvised.
-        </h1>
-        <p className="text-slate-600 max-w-2xl mx-auto">
-          Create profiles for anyone you travel with, sync their allowances, and let the optimizer surface
-          the most efficient bridges across the calendar.
+    <div className="mx-auto max-w-5xl space-y-10 px-4 py-10 sm:py-16">
+      <header className="space-y-5 text-center">
+        <p className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-brand-700 shadow-sm ring-1 ring-brand-100">
+          <span aria-hidden>🌴</span> Holiday Maximizer
         </p>
-        <div className="inline-flex items-center gap-3 rounded-full border border-white/40 px-5 py-2 glass-panel text-sm font-medium">
-          <Wand2 size={16} className="text-brand-500" />
-          {profiles.length === 0 ? 'Start by adding your first profile' : 'Select who we are planning for today'}
-        </div>
-      </div>
+        <h1 className="mx-auto max-w-3xl text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">
+          Turn your PTO into the <span className="bg-gradient-to-r from-brand-600 to-sky-500 bg-clip-text text-transparent">longest possible breaks</span>
+        </h1>
+        <p className="mx-auto max-w-2xl text-slate-600">
+          Add everyone you travel with, pick where they live, and get the best bridge days around your public holidays.
+        </p>
+      </header>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {profiles.map((profile) => {
-          const isSelected = selectedProfileIds.includes(profile.id);
-          return (
-            <button
-              key={profile.id}
-              onClick={() => handleCardToggle(profile.id)}
-              className={`glass-panel p-5 text-left transition-all hover:-translate-y-1 hover:shadow-glass relative border-2 ${
-                isSelected ? 'border-brand-400' : 'border-transparent'
-              }`}
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white font-semibold" style={{ backgroundColor: profile.color }}>
-                  {profile.avatar}
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm text-slate-400">{profile.city}, {profile.country}</p>
-                  <p className="text-xl font-semibold text-slate-900">{profile.name}</p>
-                </div>
-                {isSelected && (
-                  <span className="h-6 w-6 rounded-full bg-brand-500 flex items-center justify-center text-white">
-                    <Check size={16} />
-                  </span>
-                )}
-              </div>
-              <div className="flex justify-between text-xs text-slate-500 mt-4">
-                <span>{profile.totalAllowance} PTO days</span>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      handleEdit(profile);
-                    }}
-                    className="text-slate-400 hover:text-brand-600"
-                    aria-label="Edit profile"
-                  >
-                    <Pencil size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      deleteProfile.mutate(profile.id);
-                    }}
-                    className="text-slate-400 hover:text-rose-500"
-                    aria-label="Delete profile"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            </button>
-          );
-        })}
+      <section className="grid gap-3 sm:grid-cols-3">
+        {FEATURES.map(({ icon: Icon, title, text }) => (
+          <div key={title} className="card flex gap-3 p-4">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+              <Icon size={18} />
+            </span>
+            <div>
+              <p className="text-sm font-bold text-slate-900">{title}</p>
+              <p className="text-xs text-slate-500">{text}</p>
+            </div>
+          </div>
+        ))}
+      </section>
 
-        <button
-          onClick={() => {
-            setIsFormOpen(true);
-            setFormState(emptyForm());
-          }}
-          className="glass-panel p-5 flex flex-col items-center justify-center gap-3 border-dashed border-2 border-slate-200 text-slate-500 hover:text-brand-600 hover:border-brand-200"
-        >
-          <Plus size={28} />
-          Add traveler
-        </button>
-      </div>
-
-      <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-        <div className="glass-panel flex items-center gap-4 px-6 py-4 w-full md:w-auto">
+      <section className="space-y-4">
+        <div className="flex items-end justify-between">
           <div>
-            <p className="text-xs uppercase tracking-widest text-slate-400">Planning Year</p>
-            <p className="text-2xl font-semibold text-slate-900">{year}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              className="h-8 w-8 rounded-full border border-slate-200 text-slate-500"
-              onClick={() => setYear((prev) => prev - 1)}
-              aria-label="Previous year"
-            >
-              –
-            </button>
-            <button
-              className="h-8 w-8 rounded-full border border-slate-200 text-slate-500"
-              onClick={() => setYear((prev) => prev + 1)}
-              aria-label="Next year"
-            >
-              +
-            </button>
+            <h2 className="text-lg font-bold text-slate-900">{profiles.length === 0 ? 'Create your first profile' : 'Who are we planning for?'}</h2>
+            {profiles.length > 1 && <p className="text-sm text-slate-500">Select several to compare their time off on one calendar.</p>}
           </div>
         </div>
 
-        <button
-          onClick={handleStartPlanning}
-          disabled={selectedProfileIds.length === 0}
-          className="px-10 py-4 rounded-full text-white font-semibold text-lg shadow-lg shadow-brand-200 transition disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ background: 'linear-gradient(120deg, #7c3aed, #2563eb)' }}
-        >
-          Launch planner
-        </button>
-      </div>
-
-      {isFormOpen && (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="glass-panel w-full max-w-lg p-6 space-y-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-widest text-slate-400">{formState.id ? 'Update' : 'Create'} profile</p>
-                <h2 className="text-2xl font-semibold text-slate-900">Traveler details</h2>
-              </div>
-              <button className="text-slate-400 hover:text-slate-600" onClick={resetForm} aria-label="Close">×</button>
-            </div>
-
-            <div className="grid gap-3">
-              <label className="text-xs font-semibold text-slate-500">
-                Name
-                <input
-                  className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  value={formState.name}
-                  onChange={(event) => setFormState((prev) => ({ ...prev, name: event.target.value }))}
-                />
-              </label>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="text-xs font-semibold text-slate-500">
-                  Country
-                  <input
-                    className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2"
-                    value={formState.country}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      setFormState((prev) => ({ ...prev, country: value, isoCountryCode: undefined, isoRegionCode: undefined, city: '' }));
-                      setSearch(value);
-                      setRegionSearch('');
-                    }}
-                    onFocus={() => setSearch(formState.country)}
-                    placeholder="Search country"
-                  />
-                </label>
-                <label className="text-xs font-semibold text-slate-500">
-                  City / region
-                  <input
-                    className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2"
-                    value={regionSearch || formState.city}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      setRegionSearch(value);
-                      setFormState((prev) => ({ ...prev, city: value, isoRegionCode: undefined }));
-                    }}
-                    onFocus={() => setRegionSearch(formState.city)}
-                    placeholder={regions.length > 0 ? 'Select from list' : 'Enter city'}
-                    disabled={!formState.isoCountryCode}
-                  />
-                </label>
-              </div>
-
-              {search && filteredCountries.length > 0 && (
-                <div className="max-h-32 overflow-y-auto rounded-2xl border border-slate-100 p-2 bg-white">
-                  {filteredCountries.map((country) => (
-                    <button
-                      key={country.key}
-                      onClick={() => {
-                        setFormState((prev) => ({
-                          ...prev,
-                          country: country.value,
-                          isoCountryCode: country.key,
-                          isoRegionCode: undefined,
-                          city: '',
-                        }));
-                        setSearch('');
-                        setRegionSearch('');
-                      }}
-                      className="block w-full text-left px-3 py-1 text-sm rounded-lg hover:bg-slate-50"
-                    >
-                      {country.value}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {formState.isoCountryCode && regions.length > 0 && (regionSearch || !formState.isoRegionCode) && (
-                <div className="max-h-32 overflow-y-auto rounded-2xl border border-slate-100 p-2 bg-white">
-                  {isLoadingRegions && <p className="text-xs text-slate-400 px-3 py-1">Loading regions…</p>}
-                  {!isLoadingRegions && filteredRegions.length === 0 && (
-                    <p className="text-xs text-slate-400 px-3 py-1">Start typing to filter city-level counties</p>
-                  )}
-                  {filteredRegions.map((region) => (
-                    <button
-                      key={region.key}
-                      onClick={() => {
-                        setFormState((prev) => ({ ...prev, city: region.value, isoRegionCode: region.key }));
-                        setRegionSearch('');
-                      }}
-                      className="block w-full text-left px-3 py-1 text-sm rounded-lg hover:bg-slate-50"
-                    >
-                      {region.value}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {regionRequired && !formState.isoRegionCode && formState.isoCountryCode && (
-                <p className="text-xs text-amber-600">Select an option from the list so we can fetch city holidays.</p>
-              )}
-
-              <label className="text-xs font-semibold text-slate-500">
-                Annual allowance
-                <input
-                  type="number"
-                  min={5}
-                  className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2"
-                  value={formState.allowance}
-                  onChange={(event) => setFormState((prev) => ({ ...prev, allowance: Number(event.target.value) }))}
-                />
-              </label>
-
-              <div>
-                <p className="text-xs font-semibold text-slate-500 mb-2">Color tag</p>
-                <div className="flex gap-2">
-                  {swatches.map((swatch) => (
-                    <button
-                      key={swatch}
-                      onClick={() => setFormState((prev) => ({ ...prev, color: swatch }))}
-                      className={`h-8 w-8 rounded-full border-2 ${formState.color === swatch ? 'border-slate-900' : 'border-transparent'}`}
-                      style={{ backgroundColor: swatch }}
-                      aria-label={`Select ${swatch}`}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button className="flex-1 rounded-2xl border border-slate-200 py-3" onClick={resetForm}>
-                Cancel
-              </button>
-              <button
-                className="flex-1 rounded-2xl bg-slate-900 text-white py-3 disabled:opacity-40"
-                onClick={handleSave}
-                disabled={!canSave || isSaving}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {profiles.map((profile) => {
+            const isSelected = selectedProfileIds.includes(profile.id);
+            return (
+              <div
+                key={profile.id}
+                className={`card group relative p-4 transition hover:-translate-y-0.5 hover:shadow-md ${isSelected ? 'ring-2 ring-brand-500' : ''}`}
               >
-                {formState.id ? 'Save changes' : 'Create profile'}
+                <button onClick={() => handleCardToggle(profile.id)} className="flex w-full items-center gap-3 text-left" aria-pressed={isSelected}>
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl font-bold text-white" style={{ backgroundColor: profile.color }}>
+                    {profile.avatar}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-base font-bold text-slate-900">{profile.name}</span>
+                    <span className="block truncate text-xs text-slate-500">
+                      {profile.city === profile.country ? profile.country : `${profile.city}, ${profile.country}`}
+                    </span>
+                    <span className="mt-1 block text-xs text-slate-400">
+                      {profile.totalAllowance} PTO days · {profile.vacations.length} trips
+                    </span>
+                  </span>
+                  <span
+                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition ${isSelected ? 'bg-brand-600 text-white' : 'ring-1 ring-slate-200 text-transparent'}`}
+                  >
+                    <Check size={14} />
+                  </span>
+                </button>
+                <div className="absolute bottom-3 right-3 flex gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
+                  <button type="button" onClick={() => setEditing(profile)} className="icon-btn h-7 w-7" aria-label={`Edit ${profile.name}`}>
+                    <Pencil size={13} />
+                  </button>
+                  <button type="button" onClick={() => handleDelete(profile)} className="icon-btn h-7 w-7 hover:text-rose-600" aria-label={`Delete ${profile.name}`}>
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+
+          <button
+            onClick={() => setEditing('new')}
+            className="flex min-h-[6.5rem] flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-slate-200 text-sm font-semibold text-slate-500 transition hover:border-brand-300 hover:bg-brand-50/40 hover:text-brand-700"
+          >
+            <Plus size={22} />
+            Add person
+          </button>
+        </div>
+      </section>
+
+      {profiles.length > 0 && (
+        <section className="card flex flex-col items-center justify-between gap-4 p-4 sm:flex-row">
+          <div className="flex items-center gap-3">
+            <CalendarRange size={20} className="text-brand-600" />
+            <span className="text-sm font-semibold text-slate-600">Planning year</span>
+            <div className="flex items-center rounded-xl bg-slate-100 p-0.5">
+              <button className="icon-btn h-8 w-8" onClick={() => setYear((prev) => prev - 1)} aria-label="Previous year">
+                <ChevronLeft size={16} />
+              </button>
+              <span className="min-w-[3.5rem] text-center font-bold tabular-nums">{year}</span>
+              <button className="icon-btn h-8 w-8" onClick={() => setYear((prev) => prev + 1)} aria-label="Next year">
+                <ChevronRight size={16} />
               </button>
             </div>
           </div>
-        </div>
+          <button onClick={handleStartPlanning} disabled={selectedProfileIds.length === 0} className="btn-brand w-full px-6 py-3 text-base sm:w-auto">
+            Open planner <ArrowRight size={18} />
+          </button>
+        </section>
+      )}
+
+      <footer className="text-center text-xs text-slate-400">
+        Holiday data from{' '}
+        <a className="underline underline-offset-2" href="https://www.openholidaysapi.org" target="_blank" rel="noreferrer">
+          OpenHolidays API
+        </a>{' '}
+        and{' '}
+        <a className="underline underline-offset-2" href="https://date.nager.at" target="_blank" rel="noreferrer">
+          Nager.Date
+        </a>
+        . Your data never leaves this browser.
+      </footer>
+
+      {editing && (
+        <ProfileForm
+          profile={editing === 'new' ? undefined : editing}
+          isSaving={createProfile.isPending || updateProfile.isPending}
+          onCancel={() => setEditing(null)}
+          onSave={handleSave}
+        />
       )}
     </div>
   );
