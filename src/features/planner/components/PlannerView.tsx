@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { OptimizationSuggestion, Profile, UserSettings, Vacation, VacationCategory } from '@/lib/types';
-import { usePlannerUI } from '@/features/planner/context/PlannerContext';
-import { useProfileHydration } from '@/features/planner/hooks/useProfileHydration';
+import { CustomHoliday, OptimizationSuggestion, Profile, SaveProfilePayload, UserSettings, Vacation, VacationCategory } from '@/lib/types';
+import { SidebarTab, usePlannerUI } from '@/features/planner/context/PlannerContext';
+import { useHolidays } from '@/features/planner/hooks/useHolidays';
 import { StatsPanel } from '@/features/stats/components/StatsPanel';
 import YearCalendar from '@/features/calendar/components/YearCalendar';
 import { ProfileManager } from '@/features/profiles/components/ProfileManager';
@@ -20,9 +20,10 @@ import {
   useUpdateSettingsMutation,
 } from '@/features/profiles/hooks/useProfiles';
 import { generateICSFile, ExportOptions } from '@/lib/services/exportService';
-import { countBusinessDays, countTotalDays } from '@/lib/utils/date';
-import { Download, LayoutGrid, PanelRightOpen, Settings, Sparkles } from 'lucide-react';
-
+import { generateSmartSuggestions } from '@/lib/services/optimizationService';
+import { computePlanStats } from '@/lib/services/statsService';
+import { DEFAULT_WEEKEND, isWeekendDay, todayISO } from '@/lib/utils/date';
+import { CalendarDays, ChevronLeft, ChevronRight, Download, Plus, Settings, Sparkles, Users } from 'lucide-react';
 import { DEFAULT_CATEGORIES } from '@/lib/constants';
 
 interface PlannerViewProps {
@@ -30,7 +31,27 @@ interface PlannerViewProps {
   settings: UserSettings;
 }
 
-type SidebarTab = 'suggestions' | 'holidays' | 'trips';
+const TABS: { id: SidebarTab; label: string }[] = [
+  { id: 'suggestions', label: 'Suggestions' },
+  { id: 'holidays', label: 'Holidays' },
+  { id: 'trips', label: 'Trips' },
+];
+
+export const toProfilePayload = (profile: Profile, overrides: Partial<SaveProfilePayload> = {}): SaveProfilePayload => ({
+  name: profile.name,
+  avatar: profile.avatar,
+  color: profile.color,
+  country: profile.country,
+  city: profile.city,
+  isoCountryCode: profile.isoCountryCode,
+  isoRegionCode: profile.isoRegionCode,
+  holidaySource: profile.holidaySource,
+  weekendDays: profile.weekendDays,
+  customHolidays: profile.customHolidays,
+  totalAllowance: profile.totalAllowance,
+  categories: profile.categories,
+  ...overrides,
+});
 
 export const PlannerView = ({ profiles, settings }: PlannerViewProps) => {
   const {
@@ -58,7 +79,6 @@ export const PlannerView = ({ profiles, settings }: PlannerViewProps) => {
     setFocusedHoliday,
   } = usePlannerUI();
 
-  const { hydration, hydrateProfile } = useProfileHydration(settings);
   const createVacation = useCreateVacationMutation();
   const updateVacation = useUpdateVacationMutation();
   const deleteVacation = useDeleteVacationMutation();
@@ -66,338 +86,349 @@ export const PlannerView = ({ profiles, settings }: PlannerViewProps) => {
   const updateSettings = useUpdateSettingsMutation();
   const [vacationDraft, setVacationDraft] = useState<{ startDate: string; endDate: string } | null>(null);
   const [editingVacation, setEditingVacation] = useState<Vacation | null>(null);
+  const [lastApplied, setLastApplied] = useState<Vacation | null>(null);
 
   const visibleProfiles = useMemo(() => {
-    if (selectedProfileIds.length === 0) return profiles;
-    return profiles.filter((profile) => selectedProfileIds.includes(profile.id));
+    const selected = profiles.filter((profile) => selectedProfileIds.includes(profile.id));
+    return selected.length > 0 ? selected : profiles;
   }, [profiles, selectedProfileIds]);
 
+  const withCategories = (profile: Profile): Profile => ({
+    ...profile,
+    categories:
+      profile.categories?.length > 0
+        ? profile.categories
+        : DEFAULT_CATEGORIES.map((c) => (c.id === 'PTO' ? { ...c, color: profile.color } : c)),
+  });
+
+  const baseActive = visibleProfiles.find((profile) => profile.id === activeProfileId) ?? visibleProfiles[0];
+
   useEffect(() => {
-    if (!activeProfileId && visibleProfiles.length > 0) {
-      setActiveProfileId(visibleProfiles[0].id);
-    }
-  }, [activeProfileId, visibleProfiles, setActiveProfileId]);
+    if (baseActive && baseActive.id !== activeProfileId) setActiveProfileId(baseActive.id);
+  }, [baseActive, activeProfileId, setActiveProfileId]);
 
   useEffect(() => {
     setPreviewSuggestion(null);
     setSelectionStart(null);
     setEditingVacation(null);
-  }, [activeProfileId, setPreviewSuggestion, setSelectionStart]);
-
-  const enrichedProfiles = useMemo(() =>
-    visibleProfiles.map((profile) => ({
-      ...profile,
-      holidays: hydration[profile.id]?.holidays ?? profile.holidays ?? [],
-      suggestions: hydration[profile.id]?.suggestions ?? profile.suggestions ?? [],
-      categories: profile.categories?.length > 0 ? profile.categories : DEFAULT_CATEGORIES.map(c => c.id === 'PTO' ? { ...c, color: profile.color } : c),
-    })),
-  [visibleProfiles, hydration]);
-
-  const activeProfile = useMemo(() => enrichedProfiles.find((profile) => profile.id === activeProfileId) ?? enrichedProfiles[0], [enrichedProfiles, activeProfileId]);
+    setLastApplied(null);
+  }, [activeProfileId, settings.year, setPreviewSuggestion, setSelectionStart]);
 
   useEffect(() => {
-    if (!activeProfile) return;
-    const status = hydration[activeProfile.id]?.status ?? 'idle';
-    if (status === 'idle') {
-      hydrateProfile(activeProfile);
-    }
-  }, [activeProfile, hydration, hydrateProfile]);
+    const valid = comparedProfileIds.filter((id) => visibleProfiles.some((p) => p.id === id) && id !== baseActive?.id);
+    if (valid.length !== comparedProfileIds.length) setComparedProfileIds(valid);
+  }, [comparedProfileIds, visibleProfiles, baseActive, setComparedProfileIds]);
 
-  useEffect(() => {
-    if (activeProfile && !comparedProfileIds.every((id) => selectedProfileIds.includes(id))) {
-      setComparedProfileIds((prev) => prev.filter((id) => selectedProfileIds.includes(id)));
-    }
-  }, [activeProfile, comparedProfileIds, selectedProfileIds, setComparedProfileIds]);
+  const holidayData = useHolidays(baseActive, settings.year);
+  const weekendDays = baseActive?.weekendDays ?? DEFAULT_WEEKEND;
 
-  const handleAnalyze = () => {
-    if (activeProfile) {
-      hydrateProfile(activeProfile);
-    }
-  };
+  const activeProfile = useMemo<Profile | undefined>(
+    () => baseActive && { ...withCategories(baseActive), holidays: holidayData.holidays },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [baseActive, holidayData.holidays]
+  );
+
+  const baseStats = useMemo(
+    () =>
+      computePlanStats({
+        year: settings.year,
+        vacations: activeProfile?.vacations ?? [],
+        categories: activeProfile?.categories ?? DEFAULT_CATEGORIES,
+        holidays: holidayData.holidays,
+        weekendDays,
+      }),
+    [activeProfile, holidayData.holidays, settings.year, weekendDays]
+  );
+
+  const stats = useMemo(
+    () =>
+      previewSuggestion && activeProfile
+        ? computePlanStats({
+            year: settings.year,
+            vacations: activeProfile.vacations,
+            categories: activeProfile.categories,
+            holidays: holidayData.holidays,
+            weekendDays,
+            preview: previewSuggestion,
+          })
+        : baseStats,
+    [previewSuggestion, activeProfile, baseStats, holidayData.holidays, settings.year, weekendDays]
+  );
+
+  const remainingPto = (activeProfile?.totalAllowance ?? 0) - baseStats.used;
+
+  const suggestions = useMemo(() => {
+    if (holidayData.isLoading) return [];
+    const today = todayISO();
+    const hidePast = settings.hidePastSuggestions ?? true;
+    return generateSmartSuggestions({
+      year: settings.year,
+      holidays: holidayData.extendedHolidays,
+      settings,
+      weekendDays,
+      bookedDates: baseStats.bookedDates,
+      earliestDate: hidePast && today.startsWith(String(settings.year)) ? today : undefined,
+    });
+  }, [holidayData.isLoading, holidayData.extendedHolidays, settings, weekendDays, baseStats.bookedDates]);
+
+  const enrichedProfiles = useMemo(
+    () => visibleProfiles.map((p) => (p.id === activeProfile?.id ? { ...activeProfile, suggestions } : withCategories(p))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visibleProfiles, activeProfile, suggestions]
+  );
+
+  if (!activeProfile) {
+    return <div className="min-h-screen flex items-center justify-center text-slate-500">Select or create a profile to begin.</div>;
+  }
+
+  const saveProfile = (overrides: Partial<SaveProfilePayload>) =>
+    updateProfile.mutateAsync({ id: activeProfile.id, payload: toProfilePayload(activeProfile, overrides) });
 
   const handleApplySuggestion = async (suggestion: OptimizationSuggestion) => {
-    if (!activeProfile || suggestion.costInPto > remainingPto) return;
+    if (suggestion.costInPto > remainingPto) return;
     const result = await createVacation.mutateAsync({
       profileId: activeProfile.id,
       startDate: suggestion.startDate,
       endDate: suggestion.endDate,
       type: 'PTO',
       commuteHours: 0,
-      note: suggestion.title,
+      note: `Bridge ${suggestion.title}`,
     });
     setPreviewSuggestion(null);
-    // Don't hydrate immediately to allow SuggestionPanel to show "Applied" state
-    setTimeout(() => {
-      hydrateProfile(activeProfile);
-    }, 2000);
-    return result;
+    setLastApplied(result);
   };
 
-  const handlePlanVacation = (vacation: Vacation) => {
+  const openVacation = (vacation: Vacation | null, draft: { startDate: string; endDate: string } | null = null) => {
     setEditingVacation(vacation);
+    setVacationDraft(draft);
     setAddVacationOpen(true);
   };
 
   const handleDateClick = (date: string) => {
-    if (!activeProfile) return;
-
-    // Deselect if clicking the same date
     if (selectionStart === date) {
+      // Second click on the same day: plan a single-day trip.
       setSelectionStart(null);
-      return;
-    }
-
-    const holiday = activeProfile.holidays.find((entry) => entry.date === date);
-    const existingVacation = activeProfile.vacations.find((v) => date >= v.startDate && date <= v.endDate);
-
-    if (existingVacation && !selectionStart) {
-      setEditingVacation(existingVacation);
-      setAddVacationOpen(true);
-      return;
-    }
-
-    if (holiday && !selectionStart) {
-      setFocusedHoliday(holiday);
+      openVacation(null, { startDate: date, endDate: date });
       return;
     }
 
     if (!selectionStart) {
+      const existingVacation = activeProfile.vacations.find((v) => date >= v.startDate && date <= v.endDate);
+      if (existingVacation) return openVacation(existingVacation);
+      const holiday = activeProfile.holidays.find((entry) => entry.date === date);
+      if (holiday) return setFocusedHoliday(holiday);
       setSelectionStart(date);
       return;
     }
 
-    let start = selectionStart;
-    let end = date;
-    if (new Date(start) > new Date(end)) {
-      [start, end] = [end, start];
-    }
+    const [start, end] = selectionStart <= date ? [selectionStart, date] : [date, selectionStart];
     setSelectionStart(null);
-    setVacationDraft({ startDate: start, endDate: end });
-    setEditingVacation(null);
-    setAddVacationOpen(true);
+    openVacation(null, { startDate: start, endDate: end });
   };
 
-  const handleSaveVacation = async ({ startDate, endDate, type, commuteHours, note }: { startDate: string; endDate: string; type: string; commuteHours: number; note: string }) => {
-    if (!activeProfile) return;
-    let rangeStart = startDate;
-    let rangeEnd = endDate;
-    if (new Date(rangeStart) > new Date(rangeEnd)) {
-      [rangeStart, rangeEnd] = [rangeEnd, rangeStart];
-    }
-
-    if (editingVacation) {
-      await updateVacation.mutateAsync({
-        id: editingVacation.id,
-        payload: {
-          startDate: rangeStart,
-          endDate: rangeEnd,
-          type,
-          commuteHours,
-          note,
-        }
-      });
-    } else {
-      await createVacation.mutateAsync({
-        profileId: activeProfile.id,
-        startDate: rangeStart,
-        endDate: rangeEnd,
-        type,
-        commuteHours,
-        note,
-      });
-    }
-    
+  const closeVacationModal = () => {
     setAddVacationOpen(false);
     setVacationDraft(null);
     setEditingVacation(null);
-    hydrateProfile(activeProfile);
   };
 
-  const handleUpdateCategories = async (categories: VacationCategory[]) => {
-    if (!activeProfile) return;
-    await updateProfile.mutateAsync({
-      id: activeProfile.id,
-      payload: {
-        name: activeProfile.name,
-        avatar: activeProfile.avatar,
-        color: activeProfile.color,
-        country: activeProfile.country,
-        city: activeProfile.city,
-        isoCountryCode: activeProfile.isoCountryCode,
-        isoRegionCode: activeProfile.isoRegionCode,
-        totalAllowance: activeProfile.totalAllowance,
-        categories,
-      },
-    });
+  const handleSaveVacation = async ({ startDate, endDate, type, commuteHours, note }: { startDate: string; endDate: string; type: string; commuteHours: number; note: string }) => {
+    const [rangeStart, rangeEnd] = startDate <= endDate ? [startDate, endDate] : [endDate, startDate];
+    const payload = { startDate: rangeStart, endDate: rangeEnd, type, commuteHours, note };
+    if (editingVacation) {
+      await updateVacation.mutateAsync({ id: editingVacation.id, payload });
+    } else {
+      await createVacation.mutateAsync({ profileId: activeProfile.id, ...payload });
+    }
+    closeVacationModal();
   };
 
-  const handleRemoveVacation = (vacationId: string) => {
-    deleteVacation.mutate(vacationId);
+  const handleRemoveVacation = (vacation: Vacation) => {
+    if (!window.confirm(`Remove "${vacation.note || 'this trip'}"?`)) return;
+    deleteVacation.mutate(vacation.id);
+    if (lastApplied?.id === vacation.id) setLastApplied(null);
   };
+
+  const handleUpdateCategories = (categories: VacationCategory[]) => saveProfile({ categories });
+  const handleUpdateCustomHolidays = (customHolidays: CustomHoliday[]) => saveProfile({ customHolidays });
 
   const handleExport = (options: ExportOptions) => {
-    if (!activeProfile) return;
-    generateICSFile(activeProfile, options);
+    generateICSFile(activeProfile, options, settings.year);
+    setExportModalOpen(false);
   };
 
-  const isAnalyzing = activeProfile ? hydration[activeProfile.id]?.status === 'loading' : false;
-
-  const stats = useMemo(() => {
-    if (!activeProfile) {
-      return { used: 0, commute: 0, total: 0, efficiency: 0, topTrips: [], isProjection: false };
-    }
-    const ptoVacations = activeProfile.vacations.filter(v => {
-      const cat = activeProfile.categories.find(c => c.id === v.type);
-      return cat ? cat.isPto : v.type === 'PTO';
-    });
-
-    let used = ptoVacations.reduce((sum, vacation) => sum + countBusinessDays(vacation.startDate, vacation.endDate, activeProfile.holidays), 0);
-    let total = ptoVacations.reduce((sum, vacation) => sum + countTotalDays(vacation.startDate, vacation.endDate), 0);
-    const commute = activeProfile.vacations.reduce((sum, vacation) => sum + vacation.commuteHours, 0);
-
-    if (previewSuggestion) {
-      used += previewSuggestion.costInPto;
-      total += previewSuggestion.totalDaysOff;
-    }
-    
-    const topTrips = [...activeProfile.vacations]
-      .map(v => ({
-        ...v,
-        businessDays: countBusinessDays(v.startDate, v.endDate, activeProfile.holidays),
-        totalDays: countTotalDays(v.startDate, v.endDate)
-      }))
-      .sort((a, b) => b.businessDays - a.businessDays)
-      .slice(0, 5);
-
-    return { used, commute, total, efficiency: used ? total / used : 0, topTrips, isProjection: !!previewSuggestion };
-  }, [activeProfile, previewSuggestion]);
-
-  const remainingPto = Math.max(0, (activeProfile?.totalAllowance ?? 0) - stats.used);
-
-  if (!activeProfile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-slate-500">Select or create a profile to begin.</div>
-    );
-  }
-
-  const sidebarActiveTab = sidebarTab as SidebarTab;
+  const changeYear = (delta: number) => updateSettings.mutate({ ...settings, year: settings.year + delta });
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
-      <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="space-y-2">
-          <button className="inline-flex items-center gap-2 rounded-full bg-white/60 px-3 py-1 text-xs font-medium text-slate-500 hover:bg-white transition shadow-sm" onClick={() => setSettingsOpen(true)}>
-            <Settings size={14} />
-            Optimization settings
+    <div className="min-h-screen pb-16">
+      <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/80 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 py-3">
+          <button onClick={() => setViewMode('landing')} className="btn-ghost -ml-2 px-2" title="Back to profiles">
+            <span className="text-xl" aria-hidden>🌴</span>
+            <span className="hidden font-bold text-slate-900 sm:inline">Holiday Maximizer</span>
           </button>
-          <div className="flex items-center gap-3">
-            <span className="inline-block h-4 w-4 rounded-full" style={{ backgroundColor: activeProfile.color }} />
-            <h2 className="text-3xl font-semibold text-slate-900">{activeProfile.name}</h2>
-          </div>
-          <p className="text-slate-500 text-sm">{activeProfile.city}, {activeProfile.country}</p>
-        </div>
-        <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-          <ProfileManager
-            profiles={visibleProfiles}
-            activeProfileId={activeProfile.id}
-            comparedProfileIds={comparedProfileIds}
-            onSwitch={(id) => setActiveProfileId(id)}
-            onToggleCompare={(id) => setComparedProfileIds((prev) => (prev.includes(id) ? prev.filter((entry) => entry !== id) : [...prev, id]))}
-            onAddProfile={() => setViewMode('landing')}
-          />
-          <div className="flex gap-2">
-            <button onClick={() => setExportModalOpen(true)} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 inline-flex items-center gap-2 hover:bg-slate-50 transition shadow-sm">
-              <Download size={16} />
-              Export
+
+          <div className="flex items-center rounded-xl bg-slate-100 p-0.5" aria-label="Planning year">
+            <button className="icon-btn h-8 w-8" onClick={() => changeYear(-1)} aria-label="Previous year">
+              <ChevronLeft size={16} />
             </button>
-            <button onClick={() => setShowSuggestionsOverlay((prev) => !prev)} className={`rounded-full px-4 py-2 text-sm font-medium inline-flex items-center gap-2 transition shadow-sm ${showSuggestionsOverlay ? 'bg-amber-100 text-amber-700' : 'bg-white border border-slate-200 text-slate-600'}`}>
+            <span className="min-w-[3.5rem] text-center text-sm font-bold tabular-nums text-slate-900">{settings.year}</span>
+            <button className="icon-btn h-8 w-8" onClick={() => changeYear(1)} aria-label="Next year">
+              <ChevronRight size={16} />
+            </button>
+          </div>
+
+          <div className="order-last w-full sm:order-none sm:w-auto sm:flex-1">
+            <ProfileManager
+              profiles={visibleProfiles}
+              activeProfileId={activeProfile.id}
+              comparedProfileIds={comparedProfileIds}
+              onSwitch={(id) => setActiveProfileId(id)}
+              onToggleCompare={(id) => setComparedProfileIds((prev) => (prev.includes(id) ? prev.filter((entry) => entry !== id) : [...prev, id]))}
+              onAddProfile={() => setViewMode('landing')}
+            />
+          </div>
+
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              onClick={() => setShowSuggestionsOverlay((prev) => !prev)}
+              className={`btn px-3 ${showSuggestionsOverlay ? 'bg-amber-100 text-amber-800 hover:bg-amber-200' : 'btn-ghost'}`}
+              aria-pressed={showSuggestionsOverlay}
+              title="Highlight suggested bridges on the calendar"
+            >
               <Sparkles size={16} />
-              Overlay
+              <span className="hidden md:inline">Bridges</span>
+            </button>
+            <button onClick={() => setExportModalOpen(true)} className="btn-ghost px-3" title="Export to calendar (.ics)">
+              <Download size={16} />
+              <span className="hidden md:inline">Export</span>
+            </button>
+            <button onClick={() => setSettingsOpen(true)} className="icon-btn" aria-label="Settings" title="Settings">
+              <Settings size={18} />
             </button>
           </div>
         </div>
       </header>
 
-      <StatsPanel 
-        allowance={activeProfile.totalAllowance} 
-        used={stats.used} 
-        commuteHours={stats.commute} 
-        efficiency={stats.efficiency} 
-        holidayCount={activeProfile.holidays.length}
-        topTrips={stats.topTrips}
-        isProjection={stats.isProjection}
-      />
-
-      <main className="grid gap-6 items-start lg:grid-cols-[minmax(0,340px),1fr] xl:grid-cols-[minmax(0,360px),1fr]">
-        <aside className="space-y-4 order-2 lg:order-1 lg:sticky lg:top-8">
-          <div className="flex rounded-2xl border border-white/60 bg-white/70 p-1 shadow-sm">
-            {(['suggestions', 'holidays', 'trips'] as SidebarTab[]).map((tab) => (
-              <button key={tab} onClick={() => setSidebarTab(tab)} className={`flex-1 rounded-2xl px-3 py-2 text-xs font-bold uppercase tracking-widest transition ${sidebarActiveTab === tab ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
-                {tab}
-              </button>
-            ))}
+      <div className="mx-auto max-w-7xl space-y-6 px-4 pt-6">
+        <section className="flex flex-wrap items-end justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl text-base font-bold text-white shadow-sm" style={{ backgroundColor: activeProfile.color }}>
+              {activeProfile.avatar}
+            </span>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900">{activeProfile.name}</h1>
+              <p className="text-sm text-slate-500">
+                {activeProfile.city}, {activeProfile.country}
+              </p>
+            </div>
           </div>
-          <div className="rounded-3xl border border-white/60 bg-white/80 p-5 space-y-4 shadow-sm backdrop-blur-sm">
-            {sidebarActiveTab === 'suggestions' && (
-              <SuggestionPanel
-                suggestions={activeProfile.suggestions}
-                activeSuggestionId={previewSuggestion?.id}
-                onPreview={(suggestion) => setPreviewSuggestion(previewSuggestion?.id === suggestion.id ? null : suggestion)}
-                onApply={handleApplySuggestion}
-                onPlan={handlePlanVacation}
-                onAnalyze={handleAnalyze}
-                isAnalyzing={isAnalyzing}
-                remainingPto={remainingPto}
-              />
-            )}
-            {sidebarActiveTab === 'holidays' && (
-              <HolidayList holidays={activeProfile.holidays} year={settings.year} onSelect={setFocusedHoliday} />
-            )}
-            {sidebarActiveTab === 'trips' && (
-              <div className="space-y-4">
-                <button
-                  onClick={() => {
-                    setVacationDraft(null);
-                    setEditingVacation(null);
-                    setAddVacationOpen(true);
-                  }}
-                  className="w-full rounded-2xl border border-dashed border-slate-300 py-4 text-sm font-bold text-slate-500 hover:border-brand-300 hover:text-brand-600 hover:bg-brand-50/30 transition flex items-center justify-center gap-2"
-                >
-                  <LayoutGrid size={16} /> Add trip
-                </button>
-                <VacationList 
-                  vacations={activeProfile.vacations} 
-                  holidays={activeProfile.holidays} 
-                  onRemove={handleRemoveVacation}
-                  onEdit={(v) => {
-                    setEditingVacation(v);
-                    setAddVacationOpen(true);
-                  }}
-                />
-              </div>
-            )}
-          </div>
-        </aside>
-        <section className="space-y-4 order-1 lg:order-2">
-          <div className="flex items-center justify-between text-xs uppercase tracking-widest text-slate-400 font-bold">
-            <span className="inline-flex items-center gap-2"><LayoutGrid size={14} /> Full year</span>
-            <button onClick={handleAnalyze} className="inline-flex items-center gap-1 text-slate-500 hover:text-brand-600 transition">
-              <PanelRightOpen size={12} /> Snap to suggestion
-            </button>
-          </div>
-          <YearCalendar
-            year={settings.year}
-            profiles={enrichedProfiles}
-            activeProfileId={activeProfile.id}
-            comparedProfileIds={comparedProfileIds}
-            activeSuggestion={previewSuggestion}
-            selectionStart={selectionStart}
-            onDateClick={handleDateClick}
-            showSuggestionsOverlay={showSuggestionsOverlay}
-            remainingPto={remainingPto}
-          />
+          {comparedProfileIds.length > 0 && (
+            <p className="chip bg-slate-100 text-slate-600">
+              <Users size={12} /> Overlaying {comparedProfileIds.length} other {comparedProfileIds.length === 1 ? 'profile' : 'profiles'}
+            </p>
+          )}
         </section>
-      </main>
+
+        <StatsPanel
+          allowance={activeProfile.totalAllowance}
+          used={stats.used}
+          totalDaysOff={stats.total}
+          commuteHours={stats.commute}
+          efficiency={stats.efficiency}
+          holidayCount={activeProfile.holidays.length}
+          workdayHolidayCount={activeProfile.holidays.filter((h) => !isWeekendDay(h.date, weekendDays)).length}
+          topTrips={stats.topTrips}
+          isProjection={stats.isProjection}
+          year={settings.year}
+        />
+
+        <main className="grid items-start gap-6 lg:grid-cols-[minmax(0,360px),1fr]">
+          <aside className="space-y-3 lg:sticky lg:top-24">
+            <div className="segmented" role="tablist">
+              {TABS.map((tab) => (
+                <button key={tab.id} role="tab" aria-selected={sidebarTab === tab.id} onClick={() => setSidebarTab(tab.id)}>
+                  {tab.label}
+                  {tab.id === 'suggestions' && suggestions.length > 0 && <span className="ml-1 text-brand-600">{suggestions.length}</span>}
+                  {tab.id === 'trips' && activeProfile.vacations.length > 0 && <span className="ml-1 text-slate-400">{activeProfile.vacations.length}</span>}
+                </button>
+              ))}
+            </div>
+            <div className="card p-4 lg:max-h-[calc(100vh-11rem)] lg:overflow-y-auto scroll-area">
+              {sidebarTab === 'suggestions' && (
+                <SuggestionPanel
+                  suggestions={suggestions}
+                  activeSuggestionId={previewSuggestion?.id}
+                  onPreview={setPreviewSuggestion}
+                  onApply={handleApplySuggestion}
+                  lastApplied={lastApplied}
+                  onEditApplied={(v) => openVacation(v)}
+                  onDismissApplied={() => setLastApplied(null)}
+                  onOpenSettings={() => setSettingsOpen(true)}
+                  isLoading={holidayData.isLoading}
+                  remainingPto={remainingPto}
+                  settings={settings}
+                />
+              )}
+              {sidebarTab === 'holidays' && (
+                <HolidayList
+                  holidays={activeProfile.holidays}
+                  year={settings.year}
+                  weekendDays={weekendDays}
+                  onSelect={setFocusedHoliday}
+                  isLoading={holidayData.isLoading}
+                  error={holidayData.error}
+                  meta={holidayData.meta}
+                  onRefresh={holidayData.refresh}
+                  isRefreshing={holidayData.isRefreshing}
+                  customHolidays={activeProfile.customHolidays ?? []}
+                  onChangeCustomHolidays={handleUpdateCustomHolidays}
+                  regionLabel={activeProfile.city}
+                />
+              )}
+              {sidebarTab === 'trips' && (
+                <div className="space-y-3">
+                  <button onClick={() => openVacation(null)} className="btn-secondary w-full border-dashed py-3">
+                    <Plus size={16} /> Add trip
+                  </button>
+                  <VacationList
+                    vacations={activeProfile.vacations}
+                    categories={activeProfile.categories}
+                    holidays={activeProfile.holidays}
+                    weekendDays={weekendDays}
+                    year={settings.year}
+                    onRemove={handleRemoveVacation}
+                    onEdit={(v) => openVacation(v)}
+                  />
+                </div>
+              )}
+            </div>
+          </aside>
+
+          <section className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <CalendarDays size={16} className="text-brand-500" /> {settings.year} at a glance
+              </h2>
+              <p className="text-xs text-slate-500">
+                {selectionStart ? 'Now click the last day of the trip (or the same day again for a single day).' : 'Click a day to start planning a trip.'}
+              </p>
+            </div>
+            <YearCalendar
+              year={settings.year}
+              profiles={enrichedProfiles}
+              activeProfileId={activeProfile.id}
+              comparedProfileIds={comparedProfileIds}
+              activeSuggestion={previewSuggestion}
+              selectionStart={selectionStart}
+              onDateClick={handleDateClick}
+              showSuggestionsOverlay={showSuggestionsOverlay}
+              remainingPto={remainingPto}
+              weekendDays={weekendDays}
+            />
+          </section>
+        </main>
+      </div>
 
       {isExportModalOpen && <ExportModal profileName={activeProfile.name} onExport={handleExport} onClose={() => setExportModalOpen(false)} />}
       {isAddVacationOpen && (
@@ -406,16 +437,25 @@ export const PlannerView = ({ profiles, settings }: PlannerViewProps) => {
           defaultStart={vacationDraft?.startDate}
           defaultEnd={vacationDraft?.endDate}
           categories={activeProfile.categories}
-          onClose={() => {
-            setAddVacationOpen(false);
-            setVacationDraft(null);
-            setEditingVacation(null);
-          }}
-          onSave={(payload) => handleSaveVacation(payload)}
+          holidays={activeProfile.holidays}
+          weekendDays={weekendDays}
+          onClose={closeVacationModal}
+          onSave={handleSaveVacation}
+          onDelete={
+            editingVacation
+              ? () => {
+                  handleRemoveVacation(editingVacation);
+                  closeVacationModal();
+                }
+              : undefined
+          }
           onUpdateCategories={handleUpdateCategories}
         />
       )}
-      {focusedHoliday && <HolidayModal holiday={focusedHoliday} year={settings.year} onClose={() => setFocusedHoliday(null)} />}
+      {focusedHoliday && <HolidayModal holiday={focusedHoliday} onClose={() => setFocusedHoliday(null)} onStartTrip={(date) => {
+            setFocusedHoliday(null);
+            setSelectionStart(date);
+          }} />}
       {isSettingsOpen && (
         <SettingsModal
           settings={settings}
@@ -423,9 +463,6 @@ export const PlannerView = ({ profiles, settings }: PlannerViewProps) => {
           onClose={() => setSettingsOpen(false)}
           onSave={async (nextSettings) => {
             await updateSettings.mutateAsync(nextSettings);
-            if (activeProfile) {
-              hydrateProfile(activeProfile);
-            }
           }}
         />
       )}

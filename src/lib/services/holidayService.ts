@@ -1,35 +1,88 @@
-import { Holiday } from '@/lib/types';
+import { CustomHoliday, Holiday, HolidaySource } from '@/lib/types';
+import { cached, DAY } from './cache';
+import { appliesToRegion, fetchNagerHolidays, fetchOpenHolidays, RawHoliday } from './holidayProviders';
+import { findCountry } from './locationService';
 
-const BASE_URL = 'https://date.nager.at/api/v3';
-const cache = new Map<string, Holiday[]>();
+/** Holiday data is refreshed weekly so late government announcements show up. */
+const HOLIDAY_TTL = 7 * DAY;
 
-const cacheKey = (year: number, countryCode: string, regionCode?: string) => `${year}-${countryCode}-${regionCode ?? 'all'}`;
+export interface HolidayQuery {
+  year: number;
+  countryCode: string;
+  regionCode?: string;
+  source?: HolidaySource;
+  force?: boolean;
+}
 
-export const getPublicHolidays = async (year: number, countryCode: string, regionCode?: string): Promise<Holiday[]> => {
-  const key = cacheKey(year, countryCode, regionCode);
-  if (cache.has(key)) {
-    return cache.get(key)!;
+export interface HolidayResult {
+  holidays: Holiday[];
+  source: HolidaySource;
+  fetchedAt: number;
+  /** Set when the data could not be refreshed or a fallback provider was used. */
+  warning?: string;
+}
+
+const fetchRaw = async (source: HolidaySource, year: number, countryCode: string, force?: boolean) => {
+  if (source === 'openholidays') {
+    const country = await findCountry(countryCode);
+    const localLanguage = country?.languages.find((lang) => lang.toUpperCase() !== 'EN');
+    return cached(`holidays:openholidays:${countryCode}:${year}`, HOLIDAY_TTL, () => fetchOpenHolidays(year, countryCode, localLanguage), { force });
   }
-  const response = await fetch(`${BASE_URL}/PublicHolidays/${year}/${countryCode}`);
-  if (!response.ok) {
-    throw new Error('Unable to fetch public holidays');
-  }
-  const data: any[] = await response.json();
-  const filtered = data.filter((holiday) => {
-    if (!holiday.counties || holiday.counties.length === 0) return true;
-    if (!regionCode) return false;
-    return holiday.counties.includes(regionCode);
-  });
-  const normalized: Holiday[] = filtered.map((holiday) => ({
-    date: holiday.date,
-    name: holiday.name,
-    localName: holiday.localName,
-    countryCode: holiday.countryCode,
-    counties: holiday.counties,
-    scope: holiday.counties && holiday.counties.length > 0 ? 'regional' : 'national',
-  }));
-  cache.set(key, normalized);
-  return normalized;
+  return cached(`holidays:nager:${countryCode}:${year}`, HOLIDAY_TTL, () => fetchNagerHolidays(year, countryCode), { force });
 };
 
-export const clearHolidayCache = () => cache.clear();
+/** Several holidays can fall on the same date; keep one entry per day. */
+export const mergeByDate = (holidays: Holiday[]): Holiday[] => {
+  const byDate = new Map<string, Holiday>();
+  holidays.forEach((holiday) => {
+    const existing = byDate.get(holiday.date);
+    if (!existing) {
+      byDate.set(holiday.date, { ...holiday });
+      return;
+    }
+    if (!existing.name.split(' / ').includes(holiday.name)) existing.name = `${existing.name} / ${holiday.name}`;
+    // A day off nationwide wins over a regional/custom label.
+    if (holiday.scope === 'national') existing.scope = 'national';
+  });
+  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+};
+
+const toHoliday = (raw: RawHoliday, countryCode: string): Holiday => ({
+  date: raw.date,
+  name: raw.name,
+  localName: raw.localName,
+  countryCode,
+  regions: raw.regions,
+  scope: raw.regions.length > 0 ? 'regional' : 'national',
+});
+
+export const getPublicHolidays = async ({ year, countryCode, regionCode, source = 'nager', force }: HolidayQuery): Promise<HolidayResult> => {
+  let usedSource = source;
+  let warning: string | undefined;
+  let result;
+  try {
+    result = await fetchRaw(source, year, countryCode, force);
+  } catch (error) {
+    if (source !== 'openholidays') throw error;
+    // OpenHolidays unavailable and nothing cached: fall back to national data from Nager.Date.
+    result = await fetchRaw('nager', year, countryCode, force);
+    usedSource = 'nager';
+    regionCode = undefined;
+    warning = 'Regional holiday provider unavailable – showing national holidays only.';
+  }
+  if (result.stale) {
+    warning = `Offline – using holidays saved on ${new Date(result.fetchedAt).toLocaleDateString()}.`;
+  }
+
+  const holidays = mergeByDate(result.value.filter((h) => appliesToRegion(h, regionCode)).map((h) => toHoliday(h, countryCode)));
+  return { holidays, source: usedSource, fetchedAt: result.fetchedAt, warning };
+};
+
+const isLeapYear = (year: number) => (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+
+/** Materialize a profile's custom holidays for one year. */
+export const customHolidaysForYear = (custom: CustomHoliday[] = [], year: number): Holiday[] =>
+  custom
+    .map((entry) => (entry.recurring ? { ...entry, date: `${year}${entry.date.slice(4)}` } : entry))
+    .filter((entry) => entry.date.startsWith(`${year}-`) && !(entry.date.endsWith('-02-29') && !isLeapYear(year)))
+    .map((entry) => ({ date: entry.date, name: entry.name, scope: 'custom' as const }));

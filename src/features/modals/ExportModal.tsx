@@ -16,42 +16,40 @@ export const ExportModal = ({ profileName, onExport, onClose }: ExportModalProps
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="glass-panel w-full max-w-md p-6 space-y-5">
-        <header className="flex items-center justify-between">
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal max-w-md space-y-5" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <header className="flex items-start justify-between">
           <div>
-            <p className="text-xs uppercase tracking-widest text-slate-400">Export schedule</p>
-            <h2 className="text-2xl font-semibold text-slate-900">{profileName}</h2>
+            <p className="eyebrow">Export to calendar</p>
+            <h2 className="text-xl font-bold text-slate-900">{profileName}</h2>
+            <p className="text-sm text-slate-500">Download an .ics file for Google Calendar, Outlook or Apple Calendar.</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600" aria-label="Close">
-            <X size={20} />
+          <button onClick={onClose} className="icon-btn" aria-label="Close">
+            <X size={18} />
           </button>
         </header>
-        <div className="space-y-4">
+        <div className="space-y-2">
           <CheckboxRow
-            title="Split weekends"
-            description="Only include weekdays in PTO events so managers see the true PTO burn."
+            title="Skip weekends"
+            description="Split events so only working days appear – your manager sees the real PTO."
             checked={options.excludeWeekends}
             onChange={(checked) => setOptions((prev) => ({ ...prev, excludeWeekends: checked }))}
           />
           <CheckboxRow
-            title="Remove public holidays"
-            description="Skip days that are already government holidays."
+            title="Skip public holidays"
+            description="Leave out days that are already holidays."
             checked={options.excludeHolidays}
             onChange={(checked) => setOptions((prev) => ({ ...prev, excludeHolidays: checked }))}
           />
           <CheckboxRow
             title="Include commute notes"
-            description="Append commute hours saved into the event description."
+            description="Append saved commute hours to the event description."
             checked={options.includeCommuteDetails}
             onChange={(checked) => setOptions((prev) => ({ ...prev, includeCommuteDetails: checked }))}
           />
         </div>
-        <button
-          onClick={() => onExport(options)}
-          className="w-full rounded-2xl bg-slate-900 text-white py-3 font-semibold inline-flex items-center justify-center gap-2"
-        >
-          <Download size={18} />
+        <button onClick={() => onExport(options)} className="btn-primary w-full py-3">
+          <Download size={16} />
           Download .ics
         </button>
       </div>
@@ -59,19 +57,9 @@ export const ExportModal = ({ profileName, onExport, onClose }: ExportModalProps
   );
 };
 
-const CheckboxRow = ({
-  title,
-  description,
-  checked,
-  onChange,
-}: {
-  title: string;
-  description: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-}) => (
-  <label className="flex gap-3 rounded-2xl border border-white/60 bg-white/70 p-3 text-sm text-slate-600">
-    <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="mt-1 h-4 w-4 rounded border-slate-300 accent-brand-500" />
+const CheckboxRow = ({ title, description, checked, onChange }: { title: string; description: string; checked: boolean; onChange: (checked: boolean) => void }) => (
+  <label className="flex cursor-pointer gap-3 rounded-xl p-3 text-sm text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50">
+    <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="mt-0.5 h-4 w-4 rounded accent-brand-600" />
     <span>
       <span className="block font-semibold text-slate-900">{title}</span>
       {description}

@@ -1,0 +1,5 @@
+# Cloudflare Pages configuration (used by `npm run deploy` / `wrangler pages deploy`).
+# Change `name` if your Pages project is called something else.
+name = "holidaymaximizer"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-01-01"

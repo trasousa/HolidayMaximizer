@@ -1,4 +1,4 @@
-import { Profile, Vacation, UserSettings, SaveProfilePayload, SaveVacationPayload, Holiday } from '../types';
+import { Profile, Vacation, UserSettings, SaveProfilePayload, SaveVacationPayload } from '../types';
 
 export interface StorageDriver {
   // Profiles

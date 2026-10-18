@@ -1,82 +1,57 @@
 # 🌴 Holiday Maximizer
 
-Smart PTO planner that helps you maximize your time off by finding "bridge" days between public holidays.
+Smart PTO planner that finds the "bridge" days between weekends and public holidays, so every vacation day buys as many days off as possible.
 
-## 🔗 Live Demo
-Visit the live app at: [holidaycalendar.btopencloude.com](https://holidaycalendar.btopencloud.com)
+## 🔗 Live app
+[holidaycalendar.btopencloud.com](https://holidaycalendar.btopencloud.com), a static site on Cloudflare Pages.
 
 ## ✨ Features
 
-- **Hybrid Storage**: Use it privately on your NAS or publicly via Cloudflare.
-- **Local-First**: Public version stores all data in your browser (IndexedDB).
-- **Smart Suggestions**: Automatically find the best days to take off for maximum consecutive break.
-- **Interactive Projections**: Hover over suggestions to see the impact on your PTO balance.
-- **Custom Categories**: Color-code your days (Remote, PTO, Unpaid, etc.).
+- **Smart bridges**: suggests the working days that join weekends, holidays and trips you've already booked into one long break. Breaks can span several gaps and run across New Year.
+- **National, regional and city holidays**: data comes from the [OpenHolidays API](https://www.openholidaysapi.org) (down to municipality level, e.g. Lisbon's Santo António) and [Nager.Date](https://date.nager.at) (~120 countries). It refreshes weekly, and you can force a refresh from the Holidays tab.
+- **Custom holidays**: add municipal, company or personal days off, one-off or yearly.
+- **Per-person work week**: Fri/Sat or single-day weekends are supported, with defaults set per country.
+- **Compare people**: overlay other profiles' trips on the same calendar.
+- **Calendar export**: download an `.ics` file for Google, Outlook or Apple Calendar.
 
-## 🚀 Storage Modes
+## 💾 Your data stays in the browser
 
-The app supports two modes via the `VITE_APP_MODE` environment variable:
+There is no backend. Profiles, trips and settings are stored in **IndexedDB**, in the browser you use:
 
-1.  **`LOCAL_FIRST`** (Default for Cloudflare): Uses IndexedDB. Your data never leaves your browser.
-2.  **`SERVER_BASED`** (Default for NAS/Docker): Uses the Express/SQLite backend for persistent multi-device storage.
+- The session (current view, profile, tab and overlays) is cached too, so a reload or a later visit opens where you left off.
+- The app asks the browser for **persistent storage** so the data isn't evicted under storage pressure. Settings → *Your data* shows whether it was granted.
+- Holiday API responses are cached in IndexedDB, so the planner also works offline.
+- Use **Settings → Backup / Restore** to move your plan to another browser or device. Data is per origin, so preview deployments (`*.pages.dev`) don't share data with the production domain.
 
-## 🐳 Docker Deployment (NAS/Local)
+## 📐 Calculation rules
 
-Perfect for running on a Synology, QNAP, or any local server.
+| Rule | Behaviour |
+| --- | --- |
+| PTO cost | Only working days count: not weekends (per-profile work week), not public or custom holidays. |
+| Allowance | Only days inside the planning year count. Overlapping trips are counted once. Categories marked "Free" (remote work, commute…) don't use PTO. |
+| Days off / multiplier | The booked days plus the weekends and holidays attached to them. Multiplier = days off ÷ PTO days. |
+| Holiday types | Only real days off ("Public", and "Bank" on Nager.Date). Optional days, observances and school holidays are ignored. |
+| Bridges | Bounded by free days on both sides, cost between *min* and *max* PTO days, multiplier ≥ *min multiplier*, and (optionally) at least one public holiday. Past breaks are hidden in the current year. Results are ranked by multiplier, then length, keeping at most one longer alternative per period. |
 
-1.  **Clone the repo** to your NAS.
-2.  **Start the app**:
-    ```bash
-    docker-compose up -d
-    ```
-3.  Access the app at `http://<your-nas-ip>:4173`.
+All date maths uses plain `yyyy-MM-dd` strings in UTC, so results don't depend on your time zone.
 
-Your data will be safely stored in the `./data` directory on your host machine.
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Node.js 18+
-- npm
-
-### Installation
+## 🚀 Development
 
 ```bash
 npm install
+npm run dev        # http://localhost:3000
+npm test           # unit tests for the optimizer, stats and holiday parsing
+npm run build      # type-check + production build into dist/
 ```
 
-### Development
+## ☁️ Deploying to Cloudflare Pages
 
-```bash
-# To run with Local Storage (No backend needed)
-VITE_APP_MODE=LOCAL_FIRST npm run dev:client
+**Git integration (recommended):** in the Pages project, set:
 
-# To run with Server Backend
-npm run dev
-```
+- Build command: `npm run build`
+- Build output directory: `dist`
+- Environment variables: none needed (`VITE_APP_MODE` is no longer used and can be removed).
 
-### Build & Production
+**Direct upload:** `npm run deploy` builds and runs `wrangler pages deploy dist`. The project name comes from `wrangler.toml`.
 
-```bash
-# Build for Cloudflare Pages (Local-First)
-VITE_APP_MODE=LOCAL_FIRST npm run build
-
-# Build for Self-Hosting (Server-Based)
-npm run build
-npm start
-```
-
-## 🌐 Deployment
-
-This project is ready to be deployed on any VPS (like DigitalOcean, Hetzner, or AWS) that supports Node.js.
-
-1.  Build the frontend: `npm run build`
-2.  Set `PORT=4173` (or your preferred port).
-3.  Run the server: `npm start`
-
-*Note: For Cloudflare Pages deployment, you would need to adapt the backend to use D1 or a separate API, as SQLite is local-only.*
-
-## 🔒 Privacy & Security
-
-No personal data is collected or tracked. All your plans are stored in a local SQLite database (`data/holidaymax.db`).
+`public/_headers` caches hashed assets forever and always revalidates `index.html`, so new deploys reach users immediately.

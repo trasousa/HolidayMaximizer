@@ -4,8 +4,8 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        display: ['"Inter"', 'var(--font-sans)', 'system-ui', 'sans-serif'],
-        sans: ['"Inter"', 'var(--font-sans)', 'system-ui', 'sans-serif'],
+        display: ['"Inter"', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+        sans: ['"Inter"', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
       },
       colors: {
         brand: {
@@ -22,7 +22,7 @@ export default {
         },
       },
       boxShadow: {
-        glass: '0 10px 50px -20px rgba(26, 8, 63, 0.45)',
+        glass: '0 10px 40px -18px rgba(30, 20, 70, 0.25)',
       },
     },
   },
